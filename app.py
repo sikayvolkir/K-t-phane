@@ -6,11 +6,71 @@ st.set_page_config(
     page_title="Kütüphane Yönetimi", page_icon="📚", layout="centered"
 )
 
+# --- ÖZEL KREM / HAKİ / SİYAH TEMA (CSS) ---
+st.markdown(
+    """
+    <style>
+    .stApp {
+        background-color: #F5F2EB;
+        color: #1A1A1A;
+    }
+    
+    h1, h2, h3, h4, h5, h6, label, p, span {
+        color: #2C3022 !important;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    .stTabs [data-baseweb="tab-list"] {
+        background-color: #E6E1D5;
+        border-radius: 8px;
+        padding: 4px;
+    }
+    
+    .stTabs [data-baseweb="tab"] {
+        color: #4A5335;
+        font-weight: bold;
+    }
+
+    .stTabs [aria-selected="true"] {
+        background-color: #4A5335 !important;
+        color: #F5F2EB !important;
+        border-radius: 6px;
+    }
+
+    .stButton>button {
+        background-color: #4A5335 !important;
+        color: #F5F2EB !important;
+        border-radius: 8px !important;
+        border: none !important;
+        font-weight: 600 !important;
+        transition: 0.3s;
+    }
+    
+    .stButton>button:hover {
+        background-color: #353B26 !important;
+        color: #FFFFFF !important;
+    }
+
+    input, select, textarea, div[data-baseweb="select"] {
+        background-color: #FFFFFF !important;
+        color: #1A1A1A !important;
+        border-radius: 6px !important;
+    }
+    
+    div[data-testid="stExpander"] {
+        background-color: #EAE5D9;
+        border: 1px solid #D6CEBE;
+        border-radius: 8px;
+    }
+    </style>
+""",
+    unsafe_allow_html=True,
+)
+
 # --- VERİTABANI BAĞLANTISI ---
 conn = sqlite3.connect("kutuphane.db", check_same_thread=False)
 c = conn.cursor()
 
-# Tabloları Güvenli Oluştur (Veri Kaybını Önler)
 c.execute("""
 CREATE TABLE IF NOT EXISTS kitaplar (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -30,15 +90,13 @@ CREATE TABLE IF NOT EXISTS kategoriler (
 )
 """)
 
-# Eksik Sütun Kontrolü (Silmeden Güvenli Güncelleme)
-try:
-  c.execute("SELECT okundu_durum FROM kitaplar LIMIT 1")
-except sqlite3.OperationalError:
+c.execute("PRAGMA table_info(kitaplar)")
+columns = [column[1] for column in c.fetchall()]
+if "okundu_durum" not in columns:
   c.execute(
       "ALTER TABLE kitaplar ADD COLUMN okundu_durum TEXT DEFAULT 'Okunmadı'"
   )
 
-# Varsayılan Türleri Ekle (Eğer boşsa)
 c.execute("SELECT COUNT(*) FROM kategoriler")
 if c.fetchone()[0] == 0:
   varsayilan_kategoriler = [
@@ -56,6 +114,10 @@ conn.commit()
 
 st.title("📚 Kütüphane Yönetim Sistemi")
 
+# Session State Hazırlığı
+if "yazar_input" not in st.session_state:
+  st.session_state["yazar_input"] = ""
+
 # --- SEKMELER ---
 tab_ekle, tab_liste, tab_emanet = st.tabs(
     ["➕ Yeni Kitap Ekle", "📖 Kitap Listesi & Filtreler", "📲 Emanet İşlemleri"]
@@ -67,11 +129,9 @@ tab_ekle, tab_liste, tab_emanet = st.tabs(
 with tab_ekle:
   st.subheader("Sisteme Yeni Kitap Ekle")
 
-  # Dinamik Türleri Çek
   c.execute("SELECT ad FROM kategoriler ORDER BY ad ASC")
   kategori_listesi = [row[0] for row in c.fetchall()]
 
-  # Mevcut Yazarları Çek
   c.execute(
       "SELECT DISTINCT yazar FROM kitaplar WHERE yazar != '' ORDER BY yazar ASC"
   )
@@ -79,14 +139,30 @@ with tab_ekle:
 
   y_ad = st.text_input("Kitap Adı:")
 
-  y_yazar_secim = st.selectbox(
-      "Önceki Yazarlardan Seç (İsteğe Bağlı):",
-      ["-- Yeni Yazar Girin --"] + mevcut_yazarlar,
+  # KENDİ KENDİNE TAHMİN EDEN DİNAMİK YAZAR GİRİŞİ
+  yazar_giris = st.text_input(
+      "Yazar Adı Soyadı:",
+      value=st.session_state["yazar_input"],
+      key="yazar_text_field",
+      placeholder="Yazmaya başlayın (Örn: Ismet Özel)...",
   )
-  if y_yazar_secim == "-- Yeni Yazar Girin --":
-    y_yazar = st.text_input("Yazar Adı Soyadı:")
-  else:
-    y_yazar = st.text_input("Yazar Adı Soyadı:", value=y_yazar_secim)
+
+  # Kullanıcı yazmaya başladığında eşleşen tahminleri gösterme
+  yazar_final = yazar_giris
+  if yazar_giris.strip():
+    arama_terim = yazar_giris.strip().lower()
+    tahminler = [y for y in mevcut_yazarlar if arama_terim in y.lower()]
+
+    # Eğer tam eşleşmeyen ama benzeyen tahminler varsa altında buton olarak öner
+    if tahminler and (
+        len(tahminler) > 1 or tahminler[0].lower() != arama_terim
+    ):
+      st.caption("💡 Otomatik Tahminler (Tıklayarak Seçebilirsiniz):")
+      cols = st.columns(min(len(tahminler), 3))
+      for idx, t_yazar in enumerate(tahminler[:3]):
+        if cols[idx % 3].button(t_yazar, key=f"tahmin_{idx}"):
+          st.session_state["yazar_input"] = t_yazar
+          st.rerun()
 
   y_kat = st.selectbox("Kitap Türü (Kategori):", kategori_listesi)
   y_okundu = st.radio(
@@ -94,17 +170,17 @@ with tab_ekle:
   )
 
   if st.button("Kitabı Kaydet", use_container_width=True):
-    if y_ad.strip() and y_yazar.strip():
-      # Mükerrer Kayıt Kontrolü
+    kaydedilecek_yazar = yazar_giris.strip()
+    if y_ad.strip() and kaydedilecek_yazar:
       c.execute(
           "SELECT id FROM kitaplar WHERE LOWER(ad) = LOWER(?) AND LOWER(yazar)"
           " = LOWER(?)",
-          (y_ad.strip(), y_yazar.strip()),
+          (y_ad.strip(), kaydedilecek_yazar),
       )
       if c.fetchone():
         st.error(
-            f"⚠️ **Uyarı:** '{y_ad}' isimli kitap **{y_yazar}** yazarı ile zaten"
-            " kütüphanede kayıtlı!"
+            f"⚠️ **Uyarı:** '{y_ad}' isimli kitap **{kaydedilecek_yazar}** yazarı"
+            " ile zaten kayıtlı!"
         )
       else:
         c.execute(
@@ -112,21 +188,21 @@ with tab_ekle:
                     INSERT INTO kitaplar (ad, yazar, kategori, okundu_durum) 
                     VALUES (?, ?, ?, ?)
                 """,
-            (y_ad.strip(), y_yazar.strip(), y_kat, y_okundu),
+            (y_ad.strip(), kaydedilecek_yazar, y_kat, y_okundu),
         )
         conn.commit()
+        st.session_state["yazar_input"] = ""  # Temizle
         st.success(f"✅ '{y_ad}' başarıyla eklendi!")
         st.rerun()
     else:
       st.warning("Lütfen Kitap Adı ve Yazar alanlarını doldurun.")
 
 # ==========================================
-# 2. SEKME: KİTAP LİSTESİ, FİLTRELER VE DURUM GÜNCELLEME
+# 2. SEKME: KİTAP LİSTESİ VE FİLTRELER
 # ==========================================
 with tab_liste:
   st.subheader("📖 Kitap Envanteri")
 
-  # --- FİLTRELEME ALANI ---
   with st.expander("🔍 Detaylı Filtreleme ve Arama", expanded=True):
     col1, col2 = st.columns(2)
     with col1:
@@ -146,7 +222,6 @@ with tab_liste:
           "Okunma Durumu", ["Tümü", "Okundu", "Okunmadı"]
       )
 
-  # Sorgu Oluşturma
   sorgu = "SELECT * FROM kitaplar WHERE 1=1"
   params = []
 
@@ -168,7 +243,6 @@ with tab_liste:
 
   st.divider()
 
-  # Listeleme
   if kitaplar:
     for k in kitaplar:
       k_id, k_ad, k_yazar, k_kat, k_durum, k_emanet, k_okundu = k
@@ -183,7 +257,6 @@ with tab_liste:
             st.success("🟢 Kütüphanede")
 
         with c_right:
-          # Listeden Okundu / Okunmadı Seçimi
           yeni_okundu_secim = st.selectbox(
               "Okuma Durumu:",
               ["Okunmadı", "Okundu"],
@@ -202,7 +275,7 @@ with tab_liste:
   else:
     st.info("Kriterlere uygun kitap bulunamadı.")
 
-  # --- KİTAP TÜRLERİ (KATEGORİ) YÖNETİM AYARI ---
+  # --- TÜRLERİ YÖNETME ---
   st.write("---")
   with st.expander("⚙️ Kitap Türü (Kategori) Ayarları"):
     c.execute("SELECT id, ad FROM kategoriler ORDER BY ad ASC")
@@ -274,10 +347,7 @@ with tab_emanet:
               (kisi_adi.strip(), k_id),
           )
           conn.commit()
-          st.success(
-              f"✅ '{ad}' kitabı başarıyla **{kisi_adi}** kişisine teslim"
-              " edildi!"
-          )
+          st.success(f"✅ '{ad}' kitabı **{kisi_adi}** kişisine verildi!")
           st.rerun()
 
       elif islem_tipi == "Emanetten Geri Al":
@@ -290,7 +360,8 @@ with tab_emanet:
               (k_id,),
           )
           conn.commit()
-          st.success(f"✅ '{ad}' kitabı kütüphaneye geri teslim alındı!")
+          st.success(f"✅ '{ad}' kitabı kütüphaneye teslim alındı!")
           st.rerun()
     else:
       st.error("Bu ID'ye sahip bir kitap bulunamadı.")
+      

@@ -62,15 +62,22 @@ st.markdown(
         border: 1px solid #D6CEBE;
         border-radius: 8px;
     }
+
+    /* Stat/Metrik Kutuları Şekillendirme */
+    [data-testid="stMetricValue"] {
+        color: #4A5335 !important;
+        font-weight: bold;
+    }
     </style>
 """,
     unsafe_allow_html=True,
 )
 
-# --- VERİTABANI BAĞLANTISI ---
+# --- VERİTABANI BAĞLANTISI VE OTOMATİK SCHEMA ONARIMI ---
 conn = sqlite3.connect("kutuphane.db", check_same_thread=False)
 c = conn.cursor()
 
+# Tabloları Oluştur
 c.execute("""
 CREATE TABLE IF NOT EXISTS kitaplar (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -90,12 +97,21 @@ CREATE TABLE IF NOT EXISTS kategoriler (
 )
 """)
 
-c.execute("PRAGMA table_info(kitaplar)")
-columns = [column[1] for column in c.fetchall()]
-if "okundu_durum" not in columns:
-  c.execute(
-      "ALTER TABLE kitaplar ADD COLUMN okundu_durum TEXT DEFAULT 'Okunmadı'"
-  )
+try:
+  c.execute("SELECT okundu_durum FROM kitaplar LIMIT 1")
+except sqlite3.OperationalError:
+  c.execute("DROP TABLE IF EXISTS kitaplar")
+  c.execute("""
+    CREATE TABLE kitaplar (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ad TEXT NOT NULL,
+        yazar TEXT NOT NULL,
+        kategori TEXT,
+        durum TEXT DEFAULT 'Kütüphanede',
+        emanet_alan TEXT DEFAULT '',
+        okundu_durum TEXT DEFAULT 'Okunmadı'
+    )
+    """)
 
 c.execute("SELECT COUNT(*) FROM kategoriler")
 if c.fetchone()[0] == 0:
@@ -112,7 +128,22 @@ if c.fetchone()[0] == 0:
 
 conn.commit()
 
+# --- BAŞLIK VE SAYI ÖZETLERİ (METRİKLER) ---
 st.title("📚 Kütüphane Yönetim Sistemi")
+
+# Sayıları Veritabanından Çek
+c.execute("SELECT COUNT(*) FROM kitaplar")
+toplam_kitap = c.fetchone()[0]
+
+c.execute("SELECT COUNT(*) FROM kitaplar WHERE durum = 'Emanette'")
+emanette_kitap = c.fetchone()[0]
+
+# Üst Bilgi Kartları
+m_col1, m_col2 = st.columns(2)
+m_col1.metric(label="📖 Toplam Kitap Sayısı", value=toplam_kitap)
+m_col2.metric(label="🔴 Emanetteki Kitap Sayısı", value=emanette_kitap)
+
+st.divider()
 
 # Session State Hazırlığı
 if "yazar_input" not in st.session_state:
@@ -124,7 +155,7 @@ tab_ekle, tab_liste, tab_emanet = st.tabs(
 )
 
 # ==========================================
-# 1. SEKME: YENİ KİTAP EKLE (ANA EKRAN)
+# 1. SEKME: YENİ KİTAP EKLE
 # ==========================================
 with tab_ekle:
   st.subheader("Sisteme Yeni Kitap Ekle")
@@ -139,21 +170,18 @@ with tab_ekle:
 
   y_ad = st.text_input("Kitap Adı:")
 
-  # KENDİ KENDİNE TAHMİN EDEN DİNAMİK YAZAR GİRİŞİ
+  # DİNAMİK YAZAR GİRİŞİ
   yazar_giris = st.text_input(
       "Yazar Adı Soyadı:",
       value=st.session_state["yazar_input"],
       key="yazar_text_field",
-      placeholder="Yazmaya başlayın (Örn: Ismet Özel)...",
+      placeholder="Yazmaya başlayın (Örn: İsmet Özel)...",
   )
 
-  # Kullanıcı yazmaya başladığında eşleşen tahminleri gösterme
-  yazar_final = yazar_giris
   if yazar_giris.strip():
     arama_terim = yazar_giris.strip().lower()
     tahminler = [y for y in mevcut_yazarlar if arama_terim in y.lower()]
 
-    # Eğer tam eşleşmeyen ama benzeyen tahminler varsa altında buton olarak öner
     if tahminler and (
         len(tahminler) > 1 or tahminler[0].lower() != arama_terim
     ):
@@ -165,9 +193,6 @@ with tab_ekle:
           st.rerun()
 
   y_kat = st.selectbox("Kitap Türü (Kategori):", kategori_listesi)
-  y_okundu = st.radio(
-      "Okunma Durumu:", ["Okunmadı", "Okundu"], horizontal=True
-  )
 
   if st.button("Kitabı Kaydet", use_container_width=True):
     kaydedilecek_yazar = yazar_giris.strip()
@@ -186,9 +211,9 @@ with tab_ekle:
         c.execute(
             """
                     INSERT INTO kitaplar (ad, yazar, kategori, okundu_durum) 
-                    VALUES (?, ?, ?, ?)
+                    VALUES (?, ?, ?, 'Okunmadı')
                 """,
-            (y_ad.strip(), kaydedilecek_yazar, y_kat, y_okundu),
+            (y_ad.strip(), kaydedilecek_yazar, y_kat),
         )
         conn.commit()
         st.session_state["yazar_input"] = ""  # Temizle
@@ -257,20 +282,24 @@ with tab_liste:
             st.success("🟢 Kütüphanede")
 
         with c_right:
-          yeni_okundu_secim = st.selectbox(
-              "Okuma Durumu:",
-              ["Okunmadı", "Okundu"],
-              index=0 if k_okundu == "Okunmadı" else 1,
-              key=f"sel_okundu_{k_id}",
-          )
-          if yeni_okundu_secim != k_okundu:
+          # TIKLANABİLİR DURUM BUTONU
+          is_okundu = k_okundu == "Okundu"
+          btn_label = "✅ Okundu" if is_okundu else "📖 Okunmadı"
+
+          if st.button(
+              btn_label, key=f"btn_okundu_{k_id}", use_container_width=True
+          ):
+            yeni_durum = "Okunmadı" if is_okundu else "Okundu"
             c.execute(
                 "UPDATE kitaplar SET okundu_durum = ? WHERE id = ?",
-                (yeni_okundu_secim, k_id),
+                (yeni_durum, k_id),
             )
             conn.commit()
-            st.toast(f"#{k_id} '{k_ad}' durumu güncellendi!")
+            st.toast(
+                f"#{k_id} '{k_ad}' durumu '{yeni_durum}' olarak güncellendi!"
+            )
             st.rerun()
+
         st.divider()
   else:
     st.info("Kriterlere uygun kitap bulunamadı.")
@@ -364,4 +393,4 @@ with tab_emanet:
           st.rerun()
     else:
       st.error("Bu ID'ye sahip bir kitap bulunamadı.")
-      
+        

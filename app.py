@@ -1,5 +1,6 @@
 import sqlite3
 import urllib.parse
+import urllib.request
 import streamlit as st
 
 # Sayfa Yapılandırması
@@ -39,7 +40,7 @@ st.markdown(
         border-radius: 6px;
     }
 
-    .stButton>button {
+    .stButton>button, .stDownloadButton>button {
         background-color: #4A5335 !important;
         color: #F5F2EB !important;
         border-radius: 8px !important;
@@ -48,7 +49,7 @@ st.markdown(
         transition: 0.3s;
     }
     
-    .stButton>button:hover {
+    .stButton>button:hover, .stDownloadButton>button:hover {
         background-color: #353B26 !important;
         color: #FFFFFF !important;
     }
@@ -69,6 +70,21 @@ st.markdown(
     [data-testid="stMetricValue"] {
         color: #4A5335 !important;
         font-weight: bold;
+    }
+    
+    .qr-container {
+        text-align: center;
+        background-color: #FFFFFF;
+        padding: 8px;
+        border-radius: 8px;
+        border: 1px solid #D6CEBE;
+    }
+    .qr-title {
+        font-weight: bold;
+        color: #2C3022 !important;
+        font-size: 13px;
+        margin-top: 4px;
+        word-wrap: break-word;
     }
     </style>
 """,
@@ -124,7 +140,7 @@ if c.fetchone()[0] == 0:
       ("Kişisel Gelişim",),
   ]
   c.executemany(
-      "INSERT INTO kategoriler (ad) VALUES (?)" , varsayilan_kategoriler
+      "INSERT INTO kategoriler (ad) VALUES (?)", varsayilan_kategoriler
   )
 
 conn.commit()
@@ -146,6 +162,9 @@ st.divider()
 
 if "form_key" not in st.session_state:
   st.session_state["form_key"] = 0
+
+if "kamera_acik" not in st.session_state:
+  st.session_state["kamera_acik"] = False
 
 # --- SEKMELER ---
 tab_ekle, tab_liste, tab_emanet = st.tabs(
@@ -276,22 +295,19 @@ with tab_liste:
     for k in kitaplar:
       k_id, k_ad, k_yazar, k_kat, k_durum, k_emanet, k_okundu = k
 
-      # Sadece Kitap İsmi Görünecek (Tıklayınca Açılır)
       with st.expander(f"📘 {k_ad}"):
-        col_detay, col_qr = st.columns([2, 1])
+        col_detay, col_qr = st.columns([2, 1.2])
 
         with col_detay:
           st.write(f"**ID:** #{k_id}")
           st.write(f"**Yazar:** {k_yazar}")
           st.write(f"**Tür:** {k_kat}")
 
-          # Emanet Uyarısı
           if k_durum == "Emanette":
             st.error(f"🔴 Emanette: {k_emanet}")
           else:
             st.success("🟢 Kütüphanede")
 
-          # Okundu / Okunmadı Durum Değiştirme Butonu
           is_okundu = k_okundu == "Okundu"
           btn_label = (
               "✅ Okundu (Okunmadı Yap)"
@@ -314,21 +330,39 @@ with tab_liste:
             st.rerun()
 
         with col_qr:
-          # QR Kod Oluşturma Verisi
           qr_data = f"KITAP_ID:{k_id} - {k_ad}"
           encoded_qr_data = urllib.parse.quote(qr_data)
-          qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=150x150&data={encoded_qr_data}"
+          qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={encoded_qr_data}"
 
-          st.image(qr_url, caption=f"ID: {k_id} QR Kodu", width=130)
+          st.markdown(
+              f"""
+                    <div class="qr-container">
+                        <img src="{qr_url}" width="100%" style="max-width:140px; border-radius:4px;"/>
+                        <div class="qr-title">{k_ad}</div>
+                    </div>
+                    """,
+              unsafe_allow_html=True,
+          )
 
-          # Kopyalama Butonu
-          if st.button(
-              "📋 QR Verisini Kopyala",
-              key=f"copy_qr_{k_id}",
-              use_container_width=True,
-          ):
-            st.code(qr_data, language=None)
-            st.toast("QR Kod metni yukarıdaki kutuda hazırlandı!")
+          st.write("")
+
+          try:
+            req = urllib.request.Request(
+                qr_url, headers={"User-Agent": "Mozilla/5.0"}
+            )
+            with urllib.request.urlopen(req) as response:
+              qr_img_bytes = response.read()
+
+            st.download_button(
+                label="📥 QR İndir (.png)",
+                data=qr_img_bytes,
+                file_name=f"QR_{k_ad.replace(' ', '_')}.png",
+                mime="image/png",
+                key=f"dl_qr_{k_id}",
+                use_container_width=True,
+            )
+          except Exception:
+            st.caption("QR İndirme bağlantısı oluşturulamadı.")
 
   else:
     st.info("Kriterlere uygun kitap bulunamadı.")
@@ -369,7 +403,7 @@ with tab_liste:
 # 3. SEKME: EMANET İŞLEMLERİ & QR
 # ==========================================
 with tab_emanet:
-  st.subheader("📲 QR Kamera ile Emanet / Teslim")
+  st.subheader("📲 Emanet / Teslim İşlemleri")
 
   islem_tipi = st.radio(
       "Yapmak İstediğiniz İşlem:",
@@ -377,10 +411,19 @@ with tab_emanet:
       horizontal=True,
   )
 
-  kitap_id_manual = st.number_input(
-      "Kitap ID (Veya QR Kamera Açın):", min_value=1, step=1
-  )
-  kamera_foto = st.camera_input("QR Kodu Taramak İçin Kamerayı Açın")
+  kitap_id_manual = st.number_input("Kitap ID Giriniz:", min_value=1, step=1)
+
+  # --- İSTEĞE BAĞLI KAMERA BUTONU ---
+  if not st.session_state["kamera_acik"]:
+    if st.button("📷 QR Kamerasını Aç", use_container_width=True):
+      st.session_state["kamera_acik"] = True
+      st.rerun()
+  else:
+    if st.button("❌ Kamerayı Kapat", use_container_width=True):
+      st.session_state["kamera_acik"] = False
+      st.rerun()
+
+    kamera_foto = st.camera_input("QR Kodu Taramak İçin Kamerayı Kullanın")
 
   kisi_adi = ""
   if islem_tipi == "Emanet Ver":
@@ -422,4 +465,3 @@ with tab_emanet:
           st.rerun()
     else:
       st.error("Bu ID'ye sahip bir kitap bulunamadı.")
-          

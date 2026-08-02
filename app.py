@@ -180,7 +180,7 @@ if c.fetchone()[0] == 0:
         ("Kişisel Gelişim",),
     ]
     c.executemany(
-        "INSERT INTO kategoriler (ad) VALUES (?)", varsayilan_kategoriler
+        "INSERT INTO kategoriler (ad) VALUES (?)" , varsayilan_kategoriler
     )
     conn.commit()
 
@@ -327,7 +327,7 @@ with tab_liste:
     else:
         excel_col1.button("📤 Excel Dışa Aktar", disabled=True, use_container_width=True)
 
-    # İçe Aktarma
+    # İçe Aktarma (GÜVENLİ VE AKILLI SÜTUN ALGINALAYICI)
     with excel_col2:
         show_import = st.popover("📥 Excel İçe Aktar", use_container_width=True)
         with show_import:
@@ -350,35 +350,48 @@ with tab_liste:
                         selected_sheet = sheet_names[0]
 
                     if st.button("Onayla ve Yükle", use_container_width=True):
-                        df_raw = pd.read_excel(uploaded_file, sheet_name=selected_sheet, engine="openpyxl")
+                        # Dosyayı ham haliyle header'sız oku
+                        df_raw = pd.read_excel(uploaded_file, sheet_name=selected_sheet, header=None, engine="openpyxl")
                         
-                        cols_lower = [str(col).strip().lower() for col in df_raw.columns]
-                        df_raw.columns = cols_lower
+                        kat_idx, isim_idx, yazar_idx = None, None, None
+                        header_row = 0
 
-                        kat_col = next((col for col in df_raw.columns if col in ["kategori", "tür", "tur", "category"]), None)
-                        isim_col = next((col for col in df_raw.columns if col in ["isim", "kitap adı", "kitap adi", "ad", "title", "book"]), None)
-                        yazar_col = next((col for col in df_raw.columns if col in ["yazar", "yazar adı", "yazar adi", "author"]), None)
+                        # İlk 5 satırda başlık kelimelerini tara
+                        for r_idx in range(min(5, len(df_raw))):
+                            row_vals = [str(val).strip().lower() for val in df_raw.iloc[r_idx].values]
+                            for c_idx, val in enumerate(row_vals):
+                                if val in ["kategori", "tür", "tur", "category"]:
+                                    kat_idx = c_idx
+                                elif val in ["isim", "kitap adı", "kitap adi", "ad", "title", "book", "kitap"]:
+                                    isim_idx = c_idx
+                                elif val in ["yazar", "yazar adı", "yazar adi", "author"]:
+                                    yazar_idx = c_idx
+                            
+                            if kat_idx is not None and isim_idx is not None and yazar_idx is not None:
+                                header_row = r_idx + 1
+                                break
 
-                        if not (kat_col and isim_col and yazar_col):
-                            df_in = pd.read_excel(uploaded_file, sheet_name=selected_sheet, header=None, engine="openpyxl")
-                            kat_col = 0 if df_in.shape[1] > 0 else None
-                            isim_col = 1 if df_in.shape[1] > 1 else None
-                            yazar_col = 2 if df_in.shape[1] > 2 else None
-                        else:
-                            df_in = df_raw
+                        # Eğer başlıklar bulunamadıysa varsayılan 0: Kategori, 1: Isim, 2: Yazar kabul et
+                        if kat_idx is None or isim_idx is None or yazar_idx is None:
+                            kat_idx = 0 if df_raw.shape[1] > 0 else None
+                            isim_idx = 1 if df_raw.shape[1] > 1 else None
+                            yazar_idx = 2 if df_raw.shape[1] > 2 else None
+                            header_row = 0
 
-                        if kat_col is not None and isim_col is not None and yazar_col is not None:
+                        if kat_idx is not None and isim_idx is not None and yazar_idx is not None:
                             eklenen = 0
                             atlanan = 0
 
                             conn_imp = get_db_connection()
                             c_imp = conn_imp.cursor()
 
-                            for _, row in df_in.iterrows():
-                                kategori = str(row[kat_col]).strip() if pd.notna(row[kat_col]) else "Genel"
-                                ad = str(row[isim_col]).strip() if pd.notna(row[isim_col]) else ""
-                                yazar = str(row[yazar_col]).strip() if pd.notna(row[yazar_col]) else ""
+                            for r_i in range(header_row, len(df_raw)):
+                                row = df_raw.iloc[r_i]
+                                kategori = str(row[kat_idx]).strip() if pd.notna(row[kat_idx]) else "Genel"
+                                ad = str(row[isim_idx]).strip() if pd.notna(row[isim_idx]) else ""
+                                yazar = str(row[yazar_idx]).strip() if pd.notna(row[yazar_idx]) else ""
 
+                                # Başlık kelimeleri denk geldiyse atla
                                 if ad.lower() in ["isim", "kitap adı", "ad", "title"] and yazar.lower() in ["yazar", "author"]:
                                     continue
 
@@ -433,7 +446,7 @@ with tab_liste:
                 "Okunma Durumu", ["Tümü", "Okundu", "Okunmadı"]
             )
 
-    sorgu = "SELECT * FROM kitaplar WHERE 1=1"
+    sorgu = "SELECT id, ad, yazar, kategori, durum, emanet_alan, okundu_durum FROM kitaplar WHERE 1=1"
     params = []
 
     if arama_metin:
@@ -538,139 +551,4 @@ with tab_liste:
                     st.rerun()
                 except sqlite3.IntegrityError:
                     st.warning("Bu tür zaten mevcut.")
-            else:
-                st.warning("Lütfen bir tür adı girin.")
-
-        st.write("---")
-        if kategoriler:
-            silinecek_tur = st.selectbox(
-                "Silinecek Türü Seçin:", [k[1] for k in kategoriler]
-            )
-            if st.button("Seçili Türü Sil"):
-                c.execute("DELETE FROM kategoriler WHERE ad = ?", (silinecek_tur,))
-                conn.commit()
-                st.toast(f"'{silinecek_tur}' türü silindi!")
-                st.rerun()
-
-# ==========================================
-# 3. SEKME: EMANET İŞLEMLERİ & QR
-# ==========================================
-with tab_emanet:
-    st.subheader("📲 Emanet / Teslim İşlemleri")
-
-    islem_tipi = st.radio(
-        "Yapmak İstediğiniz İşlem:",
-        ["Emanet Ver", "Emanetten Geri Al"],
-        horizontal=True,
-    )
-
-    st.markdown("---")
-
-    if islem_tipi == "Emanet Ver":
-        c.execute("SELECT id, ad, yazar FROM kitaplar WHERE durum = 'Kütüphanede' ORDER BY ad ASC")
-        uygun_kitaplar = c.fetchall()
-    else:
-        c.execute("SELECT id, ad, emanet_alan FROM kitaplar WHERE durum = 'Emanette' ORDER BY ad ASC")
-        uygun_kitaplar = c.fetchall()
-
-    secilen_kitap_id = None
-
-    if uygun_kitaplar:
-        if islem_tipi == "Emanet Ver":
-            options_dict = {f"#{k[0]} - {k[1]} ({k[2]})": k[0] for k in uygun_kitaplar}
-        else:
-            options_dict = {f"#{k[0]} - {k[1]} (Emanette: {k[2]})": k[0] for k in uygun_kitaplar}
-        
-        secilen_label = st.selectbox("Listeden Kitap Seçin:", list(options_dict.keys()))
-        secilen_kitap_id = options_dict[secilen_label]
-    else:
-        if islem_tipi == "Emanet Ver":
-            st.info("Emanet verilebilecek kütüphanede uygun kitap bulunmuyor.")
-        else:
-            st.info("Şu an emanette olan kitap bulunmuyor.")
-
-    with st.expander("veya Manuel / QR ile ID Girin"):
-        kitap_id_manual = st.number_input(
-            "Kitap ID:",
-            min_value=1,
-            step=1,
-            value=int(st.session_state["scanned_id"]),
-        )
-        if st.button("Bu ID'yi Kullan"):
-            secilen_kitap_id = kitap_id_manual
-
-    # Kamera Tara Bloğu
-    if not st.session_state["kamera_acik"]:
-        if st.button("📷 QR Kamerasını Aç", use_container_width=True):
-            st.session_state["kamera_acik"] = True
-            st.rerun()
-    else:
-        if st.button("❌ Kamerayı Kapat", use_container_width=True):
-            st.session_state["kamera_acik"] = False
-            st.rerun()
-
-        kamera_foto = st.camera_input("QR Kodu Taramak İçin Fotoğraf Çekin")
-
-        if kamera_foto is not None:
-            bytes_data = kamera_foto.getvalue()
-            np_img = np.frombuffer(bytes_data, np.uint8)
-            img = cv2.imdecode(np_img, cv2.IMREAD_COLOR)
-
-            detector = cv2.QRCodeDetector()
-            decoded_info, points, _ = detector.detectAndDecode(img)
-
-            if decoded_info:
-                match = re.search(r"KITAP_ID:(\d+)", decoded_info)
-                if match:
-                    found_id = int(match.group(1))
-                    st.session_state["scanned_id"] = found_id
-                    secilen_kitap_id = found_id
-                    st.success(f"🎯 QR Kod Başarıyla Okundu! Seçilen Kitap ID: #{found_id}")
-                else:
-                    st.warning("QR Kod okundu fakat geçerli bir Kitap ID formatı içermiyor.")
-            else:
-                st.error("⚠️ Fotoğrafta QR Kod tespit edilemedi. Lütfen net bir fotoğraf çekin.")
-
-    st.markdown("---")
-
-    kisi_adi = ""
-    if islem_tipi == "Emanet Ver":
-        kisi_adi = st.text_input("Emanet Edilecek Kişinin Adı Soyadı:")
-
-    if st.button("İşlemi Onayla ve Kaydet", use_container_width=True):
-        if secilen_kitap_id is None:
-            st.warning("Lütfen işlem yapılacak bir kitap seçin.")
-        else:
-            c.execute("SELECT * FROM kitaplar WHERE id = ?", (secilen_kitap_id,))
-            kitap = c.fetchone()
-
-            if kitap:
-                k_id, ad, yazar, kat, durum, emanet_alan, okundu = kitap
-
-                if islem_tipi == "Emanet Ver":
-                    if durum == "Emanette":
-                        st.error(f"Bu kitap zaten **{emanet_alan}** isimli kişide!")
-                    elif not kisi_adi.strip():
-                        st.warning("Lütfen kitabı alacak kişinin adını girin.")
-                    else:
-                        c.execute(
-                            "UPDATE kitaplar SET durum = 'Emanette', emanet_alan = ? WHERE id = ?",
-                            (kisi_adi.strip(), k_id),
-                        )
-                        conn.commit()
-                        st.toast(f"✅ '{ad}' kitabı **{kisi_adi}** kişisine verildi!")
-                        st.rerun()
-
-                elif islem_tipi == "Emanetten Geri Al":
-                    if durum == "Kütüphanede":
-                        st.info("Bu kitap zaten kütüphanede görünüyor.")
-                    else:
-                        c.execute(
-                            "UPDATE kitaplar SET durum = 'Kütüphanede', emanet_alan = '' WHERE id = ?",
-                            (k_id,),
-                        )
-                        conn.commit()
-                        st.toast(f"✅ '{ad}' kitabı kütüphaneye teslim alındı!")
-                        st.rerun()
-            else:
-                st.error(f"#{secilen_kitap_id} ID'li bir kitap bulunamadı.")
+            els

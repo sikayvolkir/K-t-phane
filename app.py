@@ -1,4 +1,5 @@
 import sqlite3
+import urllib.parse
 import streamlit as st
 
 # Sayfa Yapılandırması
@@ -62,6 +63,7 @@ st.markdown(
         background-color: #EAE5D9;
         border: 1px solid #D6CEBE;
         border-radius: 8px;
+        margin-bottom: 8px;
     }
 
     [data-testid="stMetricValue"] {
@@ -122,7 +124,7 @@ if c.fetchone()[0] == 0:
       ("Kişisel Gelişim",),
   ]
   c.executemany(
-      "INSERT INTO kategoriler (ad) VALUES (?)", varsayilan_kategoriler
+      "INSERT INTO kategoriler (ad) VALUES (?)" , varsayilan_kategoriler
   )
 
 conn.commit()
@@ -142,7 +144,6 @@ m_col2.metric(label="🔴 Emanetteki Kitap Sayısı", value=emanette_kitap)
 
 st.divider()
 
-# Formu güvenli sıfırlama mekanizması (Form anahtarı sıfırlama)
 if "form_key" not in st.session_state:
   st.session_state["form_key"] = 0
 
@@ -165,7 +166,6 @@ with tab_ekle:
   )
   mevcut_yazarlar = [row[0] for row in c.fetchall()]
 
-  # Dinamik Key ile Form Elemanları (Sıfırlama için)
   fk = st.session_state["form_key"]
 
   y_ad = st.text_input("Kitap Adı:", key=f"kitap_adi_{fk}")
@@ -217,10 +217,8 @@ with tab_ekle:
         )
         conn.commit()
 
-        # Key değerini artırarak girdileri güvenle tamamen sıfırla
         st.session_state["form_key"] += 1
 
-        # Bildirim göster ve sayfayı yenile
         st.toast(
             f"✅ '{kaydedilecek_ad}' kütüphaneye başarıyla eklendi!", icon="📚"
         )
@@ -234,7 +232,7 @@ with tab_ekle:
 with tab_liste:
   st.subheader("📖 Kitap Envanteri")
 
-  with st.expander("🔍 Detaylı Filtreleme ve Arama", expanded=True):
+  with st.expander("🔍 Detaylı Filtreleme ve Arama", expanded=False):
     col1, col2 = st.columns(2)
     with col1:
       arama_metin = st.text_input("Kitap / Yazar Ara")
@@ -277,19 +275,29 @@ with tab_liste:
   if kitaplar:
     for k in kitaplar:
       k_id, k_ad, k_yazar, k_kat, k_durum, k_emanet, k_okundu = k
-      with st.container():
-        c_left, c_right = st.columns([2.5, 1.5])
-        with c_left:
-          st.markdown(f"### #{k_id} - {k_ad}")
-          st.write(f"**Yazar:** {k_yazar} | **Tür:** {k_kat}")
+
+      # Sadece Kitap İsmi Görünecek (Tıklayınca Açılır)
+      with st.expander(f"📘 {k_ad}"):
+        col_detay, col_qr = st.columns([2, 1])
+
+        with col_detay:
+          st.write(f"**ID:** #{k_id}")
+          st.write(f"**Yazar:** {k_yazar}")
+          st.write(f"**Tür:** {k_kat}")
+
+          # Emanet Uyarısı
           if k_durum == "Emanette":
             st.error(f"🔴 Emanette: {k_emanet}")
           else:
             st.success("🟢 Kütüphanede")
 
-        with c_right:
+          # Okundu / Okunmadı Durum Değiştirme Butonu
           is_okundu = k_okundu == "Okundu"
-          btn_label = "✅ Okundu" if is_okundu else "📖 Okunmadı"
+          btn_label = (
+              "✅ Okundu (Okunmadı Yap)"
+              if is_okundu
+              else "📖 Okunmadı (Okundu Yap)"
+          )
 
           if st.button(
               btn_label, key=f"btn_okundu_{k_id}", use_container_width=True
@@ -305,7 +313,23 @@ with tab_liste:
             )
             st.rerun()
 
-        st.divider()
+        with col_qr:
+          # QR Kod Oluşturma Verisi
+          qr_data = f"KITAP_ID:{k_id} - {k_ad}"
+          encoded_qr_data = urllib.parse.quote(qr_data)
+          qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=150x150&data={encoded_qr_data}"
+
+          st.image(qr_url, caption=f"ID: {k_id} QR Kodu", width=130)
+
+          # Kopyalama Butonu
+          if st.button(
+              "📋 QR Verisini Kopyala",
+              key=f"copy_qr_{k_id}",
+              use_container_width=True,
+          ):
+            st.code(qr_data, language=None)
+            st.toast("QR Kod metni yukarıdaki kutuda hazırlandı!")
+
   else:
     st.info("Kriterlere uygun kitap bulunamadı.")
 
@@ -398,4 +422,4 @@ with tab_emanet:
           st.rerun()
     else:
       st.error("Bu ID'ye sahip bir kitap bulunamadı.")
-    
+          

@@ -280,10 +280,10 @@ with tab_ekle:
 with tab_liste:
   st.subheader("📖 Kitap Envanteri")
 
-  # --- İÇE & DIŞA AKTAR BUTONLARI (AKSİYON PANENLİ) ---
+  # --- İÇE & DIŞA AKTAR BUTONLARI ---
   excel_col1, excel_col2 = st.columns(2)
 
-  # Dışa Aktarma Butonu
+  # Dışa Aktarma
   c.execute(
       "SELECT kategori AS Kategori, ad AS Isim, yazar AS Yazar, durum AS"
       " Durum, emanet_alan AS 'Emanet Alan', okundu_durum AS 'Okunma Durumu'"
@@ -315,19 +315,22 @@ with tab_liste:
   else:
     excel_col1.button("📤 Excel Dışa Aktar", disabled=True, use_container_width=True)
 
-  # İçe Aktarma Expander / Buton Tetikleyici
+  # İçe Aktarma (.xlsx, .xls ve .xlsm DESTEKLİ)
   with excel_col2:
     show_import = st.popover("📥 Excel İçe Aktar", use_container_width=True)
     with show_import:
       st.markdown("**Excel'den Kitap Yükle**")
       st.caption("Sütunlar: `Kategori`, `Isim` (veya Kitap Adı), `Yazar`")
       uploaded_file = st.file_uploader(
-          "Excel seçin", type=["xlsx", "xls"], label_visibility="collapsed"
+          "Excel seçin",
+          type=["xlsx", "xls", "xlsm"],
+          label_visibility="collapsed",
       )
 
       if uploaded_file is not None:
         try:
-          df_in = pd.read_excel(uploaded_file)
+          # .xlsm desteği için openpyxl motoru ile okunur
+          df_in = pd.read_excel(uploaded_file, engine="openpyxl")
           df_in.columns = [str(col).strip() for col in df_in.columns]
 
           kat_col = next(
@@ -410,7 +413,7 @@ with tab_liste:
         except Exception as e:
           st.error(f"Hata: {e}")
 
-  # --- FILTRELER ---
+  # --- FİLTRELER ---
   with st.expander("🔍 Detaylı Filtreleme ve Arama", expanded=False):
     col1, col2 = st.columns(2)
     with col1:
@@ -614,4 +617,4 @@ with tab_emanet:
           st.rerun()
     else:
       st.error("Bu ID'ye sahip bir kitap bulunamadı.")
-        
+              

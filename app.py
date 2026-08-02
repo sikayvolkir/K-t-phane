@@ -1,6 +1,8 @@
+import io
 import sqlite3
 import urllib.parse
 import urllib.request
+from PIL import Image, ImageDraw, ImageFont
 import streamlit as st
 
 # Sayfa Yapılandırması
@@ -71,25 +73,46 @@ st.markdown(
         color: #4A5335 !important;
         font-weight: bold;
     }
-    
-    .qr-container {
-        text-align: center;
-        background-color: #FFFFFF;
-        padding: 8px;
-        border-radius: 8px;
-        border: 1px solid #D6CEBE;
-    }
-    .qr-title {
-        font-weight: bold;
-        color: #2C3022 !important;
-        font-size: 13px;
-        margin-top: 4px;
-        word-wrap: break-word;
-    }
     </style>
 """,
     unsafe_allow_html=True,
 )
+
+
+# --- QR KOD VE İSİM BİRLEŞTİRME FONKSİYONU ---
+def generate_labeled_qr(qr_url, book_title):
+  """QR koda alt bilgi olarak kitap ismini çizen ve PNG byte'ı döndüren fonksiyon"""
+  req = urllib.request.Request(qr_url, headers={"User-Agent": "Mozilla/5.0"})
+  with urllib.request.urlopen(req) as response:
+    qr_img = Image.open(io.BytesIO(response.read())).convert("RGB")
+
+  qr_w, qr_h = qr_img.size
+  text_padding = 40
+  new_h = qr_h + text_padding
+
+  # Beyaz arka planlı yeni tuval
+  final_img = Image.new("RGB", (qr_w, new_h), "white")
+  final_img.paste(qr_img, (0, 0))
+
+  draw = ImageDraw.Draw(final_img)
+
+  try:
+    font = ImageFont.truetype("arial.ttf", 16)
+  except OSError:
+    font = ImageFont.load_default()
+
+  # Metni ortalayarak yerleştir
+  bbox = draw.textbbox((0, 0), book_title, font=font)
+  text_w = bbox[2] - bbox[0]
+  x = (qr_w - text_w) / 2
+  y = qr_h + (text_padding - (bbox[3] - bbox[1])) / 2 - 4
+
+  draw.text((x, y), book_title, fill="black", font=font)
+
+  img_byte_arr = io.BytesIO()
+  final_img.save(img_byte_arr, format="PNG")
+  return img_byte_arr.getvalue()
+
 
 # --- VERİTABANI BAĞLANTISI ---
 conn = sqlite3.connect("kutuphane.db", check_same_thread=False)
@@ -334,35 +357,26 @@ with tab_liste:
           encoded_qr_data = urllib.parse.quote(qr_data)
           qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={encoded_qr_data}"
 
-          st.markdown(
-              f"""
-                    <div class="qr-container">
-                        <img src="{qr_url}" width="100%" style="max-width:140px; border-radius:4px;"/>
-                        <div class="qr-title">{k_ad}</div>
-                    </div>
-                    """,
-              unsafe_allow_html=True,
-          )
-
-          st.write("")
-
           try:
-            req = urllib.request.Request(
-                qr_url, headers={"User-Agent": "Mozilla/5.0"}
-            )
-            with urllib.request.urlopen(req) as response:
-              qr_img_bytes = response.read()
+            # Resim ve metni görselin içine gömüyoruz
+            labeled_qr_bytes = generate_labeled_qr(qr_url, k_ad)
 
+            # Önizleme olarak altı yazılı görseli göster
+            st.image(
+                labeled_qr_bytes, caption=f"ID: #{k_id}", use_container_width=True
+            )
+
+            # İndirme Butonu: Resim kaydolduğunda yazısı üzerinde olacak
             st.download_button(
                 label="📥 QR İndir (.png)",
-                data=qr_img_bytes,
+                data=labeled_qr_bytes,
                 file_name=f"QR_{k_ad.replace(' ', '_')}.png",
                 mime="image/png",
                 key=f"dl_qr_{k_id}",
                 use_container_width=True,
             )
-          except Exception:
-            st.caption("QR İndirme bağlantısı oluşturulamadı.")
+          except Exception as e:
+            st.caption("QR görseli oluşturulamadı.")
 
   else:
     st.info("Kriterlere uygun kitap bulunamadı.")
@@ -465,3 +479,4 @@ with tab_emanet:
           st.rerun()
     else:
       st.error("Bu ID'ye sahip bir kitap bulunamadı.")
+    

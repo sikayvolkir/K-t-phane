@@ -2,6 +2,7 @@ import io
 import sqlite3
 import urllib.parse
 import urllib.request
+import pandas as pd
 from PIL import Image, ImageDraw, ImageFont
 import streamlit as st
 
@@ -81,7 +82,6 @@ st.markdown(
 
 # --- QR KOD VE İSİM BİRLEŞTİRME FONKSİYONU ---
 def generate_labeled_qr(qr_url, book_title):
-  """QR koda alt bilgi olarak kitap ismini çizen ve PNG byte'ı döndüren fonksiyon"""
   req = urllib.request.Request(qr_url, headers={"User-Agent": "Mozilla/5.0"})
   with urllib.request.urlopen(req) as response:
     qr_img = Image.open(io.BytesIO(response.read())).convert("RGB")
@@ -90,7 +90,6 @@ def generate_labeled_qr(qr_url, book_title):
   text_padding = 40
   new_h = qr_h + text_padding
 
-  # Beyaz arka planlı yeni tuval
   final_img = Image.new("RGB", (qr_w, new_h), "white")
   final_img.paste(qr_img, (0, 0))
 
@@ -101,7 +100,6 @@ def generate_labeled_qr(qr_url, book_title):
   except OSError:
     font = ImageFont.load_default()
 
-  # Metni ortalayarak yerleştir
   bbox = draw.textbbox((0, 0), book_title, font=font)
   text_w = bbox[2] - bbox[0]
   x = (qr_w - text_w) / 2
@@ -112,6 +110,14 @@ def generate_labeled_qr(qr_url, book_title):
   img_byte_arr = io.BytesIO()
   final_img.save(img_byte_arr, format="PNG")
   return img_byte_arr.getvalue()
+
+
+# --- EXCEL OLUŞTURMA FONKSİYONU (BYTES) ---
+def convert_df_to_excel(df):
+  output = io.BytesIO()
+  with pd.ExcelWriter(output, engine="openpyxl") as writer:
+    df.to_excel(writer, index=False, sheet_name="Kitap Listesi")
+  return output.getvalue()
 
 
 # --- VERİTABANI BAĞLANTISI ---
@@ -274,6 +280,137 @@ with tab_ekle:
 with tab_liste:
   st.subheader("📖 Kitap Envanteri")
 
+  # --- İÇE & DIŞA AKTAR BUTONLARI (AKSİYON PANENLİ) ---
+  excel_col1, excel_col2 = st.columns(2)
+
+  # Dışa Aktarma Butonu
+  c.execute(
+      "SELECT kategori AS Kategori, ad AS Isim, yazar AS Yazar, durum AS"
+      " Durum, emanet_alan AS 'Emanet Alan', okundu_durum AS 'Okunma Durumu'"
+      " FROM kitaplar ORDER BY id DESC"
+  )
+  tum_kitaplar_raw = c.fetchall()
+
+  if tum_kitaplar_raw:
+    df_export = pd.DataFrame(
+        tum_kitaplar_raw,
+        columns=[
+            "Kategori",
+            "Isim",
+            "Yazar",
+            "Durum",
+            "Emanet Alan",
+            "Okunma Durumu",
+        ],
+    )
+    excel_data = convert_df_to_excel(df_export)
+
+    excel_col1.download_button(
+        label="📤 Excel Dışa Aktar",
+        data=excel_data,
+        file_name="Kutuphane_Kitap_Listesi.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True,
+    )
+  else:
+    excel_col1.button("📤 Excel Dışa Aktar", disabled=True, use_container_width=True)
+
+  # İçe Aktarma Expander / Buton Tetikleyici
+  with excel_col2:
+    show_import = st.popover("📥 Excel İçe Aktar", use_container_width=True)
+    with show_import:
+      st.markdown("**Excel'den Kitap Yükle**")
+      st.caption("Sütunlar: `Kategori`, `Isim` (veya Kitap Adı), `Yazar`")
+      uploaded_file = st.file_uploader(
+          "Excel seçin", type=["xlsx", "xls"], label_visibility="collapsed"
+      )
+
+      if uploaded_file is not None:
+        try:
+          df_in = pd.read_excel(uploaded_file)
+          df_in.columns = [str(col).strip() for col in df_in.columns]
+
+          kat_col = next(
+              (
+                  c
+                  for c in df_in.columns
+                  if c.lower() in ["kategori", "tür", "tur"]
+              ),
+              None,
+          )
+          isim_col = next(
+              (
+                  c
+                  for c in df_in.columns
+                  if c.lower() in ["isim", "kitap adı", "kitap adi", "ad"]
+              ),
+              None,
+          )
+          yazar_col = next(
+              (
+                  c
+                  for c in df_in.columns
+                  if c.lower() in ["yazar", "yazar adı"]
+              ),
+              None,
+          )
+
+          if kat_col and isim_col and yazar_col:
+            if st.button("Onayla ve Yükle", use_container_width=True):
+              eklenen = 0
+              atlanan = 0
+
+              for _, row in df_in.iterrows():
+                kategori = (
+                    str(row[kat_col]).strip()
+                    if pd.notna(row[kat_col])
+                    else "Genel"
+                )
+                ad = (
+                    str(row[isim_col]).strip()
+                    if pd.notna(row[isim_col])
+                    else ""
+                )
+                yazar = (
+                    str(row[yazar_col]).strip()
+                    if pd.notna(row[yazar_col])
+                    else ""
+                )
+
+                if ad and yazar:
+                  c.execute(
+                      "SELECT id FROM kitaplar WHERE LOWER(ad) = LOWER(?) AND"
+                      " LOWER(yazar) = LOWER(?)",
+                      (ad, yazar),
+                  )
+                  if c.fetchone():
+                    atlanan += 1
+                  else:
+                    c.execute(
+                        "INSERT OR IGNORE INTO kategoriler (ad) VALUES (?)",
+                        (kategori,),
+                    )
+                    c.execute(
+                        """
+                                        INSERT INTO kitaplar (ad, yazar, kategori, okundu_durum) 
+                                        VALUES (?, ?, ?, 'Okunmadı')
+                                    """,
+                        (ad, yazar, kategori),
+                    )
+                    eklenen += 1
+
+              conn.commit()
+              st.toast(
+                  f"🎉 {eklenen} kitap eklendi, {atlanan} mükerrer kayıt"
+                  " atlandı."
+              )
+              st.rerun()
+          else:
+            st.error("⚠️ Sütun başlıkları: 'Kategori', 'Isim', 'Yazar' olmalı.")
+        except Exception as e:
+          st.error(f"Hata: {e}")
+
+  # --- FILTRELER ---
   with st.expander("🔍 Detaylı Filtreleme ve Arama", expanded=False):
     col1, col2 = st.columns(2)
     with col1:
@@ -358,15 +495,14 @@ with tab_liste:
           qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={encoded_qr_data}"
 
           try:
-            # Resim ve metni görselin içine gömüyoruz
             labeled_qr_bytes = generate_labeled_qr(qr_url, k_ad)
 
-            # Önizleme olarak altı yazılı görseli göster
             st.image(
-                labeled_qr_bytes, caption=f"ID: #{k_id}", use_container_width=True
+                labeled_qr_bytes,
+                caption=f"ID: #{k_id}",
+                use_container_width=True,
             )
 
-            # İndirme Butonu: Resim kaydolduğunda yazısı üzerinde olacak
             st.download_button(
                 label="📥 QR İndir (.png)",
                 data=labeled_qr_bytes,
@@ -375,7 +511,7 @@ with tab_liste:
                 key=f"dl_qr_{k_id}",
                 use_container_width=True,
             )
-          except Exception as e:
+          except Exception:
             st.caption("QR görseli oluşturulamadı.")
 
   else:
@@ -427,7 +563,6 @@ with tab_emanet:
 
   kitap_id_manual = st.number_input("Kitap ID Giriniz:", min_value=1, step=1)
 
-  # --- İSTEĞE BAĞLI KAMERA BUTONU ---
   if not st.session_state["kamera_acik"]:
     if st.button("📷 QR Kamerasını Aç", use_container_width=True):
       st.session_state["kamera_acik"] = True
@@ -479,4 +614,4 @@ with tab_emanet:
           st.rerun()
     else:
       st.error("Bu ID'ye sahip bir kitap bulunamadı.")
-    
+        

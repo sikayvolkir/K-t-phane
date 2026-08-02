@@ -315,12 +315,13 @@ with tab_liste:
   else:
     excel_col1.button("📤 Excel Dışa Aktar", disabled=True, use_container_width=True)
 
-  # İçe Aktarma (.xlsx, .xls ve .xlsm DESTEKLİ)
+  # İçe Aktarma (.xlsx, .xls ve .xlsm DESTEKLİ / ÇOKLU SAYFA VE OTOMATİK SÜTUN TESPİTİ)
   with excel_col2:
     show_import = st.popover("📥 Excel İçe Aktar", use_container_width=True)
     with show_import:
       st.markdown("**Excel'den Kitap Yükle**")
-      st.caption("Sütunlar: `Kategori`, `Isim` (veya Kitap Adı), `Yazar`")
+      st.caption("Çoklu sayfa desteklenir. Sütun isimleri bulunamazsa veriler 2. satırdan itibaren sırasıyla (Kategori, İsim, Yazar) alınır.")
+      
       uploaded_file = st.file_uploader(
           "Excel seçin",
           type=["xlsx", "xls", "xlsm"],
@@ -329,61 +330,44 @@ with tab_liste:
 
       if uploaded_file is not None:
         try:
-          # .xlsm desteği için openpyxl motoru ile okunur
-          df_in = pd.read_excel(uploaded_file, engine="openpyxl")
-          df_in.columns = [str(col).strip() for col in df_in.columns]
+          # Excel'deki sayfa isimlerini oku
+          excel_file = pd.ExcelFile(uploaded_file, engine="openpyxl")
+          sheet_names = excel_file.sheet_names
 
-          kat_col = next(
-              (
-                  c
-                  for c in df_in.columns
-                  if c.lower() in ["kategori", "tür", "tur"]
-              ),
-              None,
-          )
-          isim_col = next(
-              (
-                  c
-                  for c in df_in.columns
-                  if c.lower() in ["isim", "kitap adı", "kitap adi", "ad"]
-              ),
-              None,
-          )
-          yazar_col = next(
-              (
-                  c
-                  for c in df_in.columns
-                  if c.lower() in ["yazar", "yazar adı"]
-              ),
-              None,
-          )
+          # Birden fazla sayfa varsa kullanıcıya seçtir, 1 tane varsa direkt al
+          if len(sheet_names) > 1:
+            selected_sheet = st.selectbox("📂 Okunacak Sayfayı Seçin:", sheet_names)
+          else:
+            selected_sheet = sheet_names[0]
 
-          if kat_col and isim_col and yazar_col:
-            if st.button("Onayla ve Yükle", use_container_width=True):
+          if st.button("Onayla ve Yükle", use_container_width=True):
+            # Dosyayı önce başlıklı oku
+            df_in = pd.read_excel(uploaded_file, sheet_name=selected_sheet, engine="openpyxl")
+            cols_clean = [str(col).strip().lower() for col in df_in.columns]
+
+            kat_col = next((c for c in df_in.columns if str(c).strip().lower() in ["kategori", "tür", "tur"]), None)
+            isim_col = next((c for c in df_in.columns if str(c).strip().lower() in ["isim", "kitap adı", "kitap adi", "ad"]), None)
+            yazar_col = next((c for c in df_in.columns if str(c).strip().lower() in ["yazar", "yazar adı"]), None)
+
+            # Başlıklar standart bulunamadıysa: 2. Satırdan itibaren sırayla (0, 1, 2) al
+            if not (kat_col and isim_col and yazar_col):
+              df_in = pd.read_excel(uploaded_file, sheet_name=selected_sheet, skiprows=1, header=None, engine="openpyxl")
+              kat_col = 0 if df_in.shape[1] > 0 else None
+              isim_col = 1 if df_in.shape[1] > 1 else None
+              yazar_col = 2 if df_in.shape[1] > 2 else None
+
+            if kat_col is not None and isim_col is not None and yazar_col is not None:
               eklenen = 0
               atlanan = 0
 
               for _, row in df_in.iterrows():
-                kategori = (
-                    str(row[kat_col]).strip()
-                    if pd.notna(row[kat_col])
-                    else "Genel"
-                )
-                ad = (
-                    str(row[isim_col]).strip()
-                    if pd.notna(row[isim_col])
-                    else ""
-                )
-                yazar = (
-                    str(row[yazar_col]).strip()
-                    if pd.notna(row[yazar_col])
-                    else ""
-                )
+                kategori = str(row[kat_col]).strip() if pd.notna(row[kat_col]) else "Genel"
+                ad = str(row[isim_col]).strip() if pd.notna(row[isim_col]) else ""
+                yazar = str(row[yazar_col]).strip() if pd.notna(row[yazar_col]) else ""
 
-                if ad and yazar:
+                if ad and yazar and ad.lower() != "nan" and yazar.lower() != "nan":
                   c.execute(
-                      "SELECT id FROM kitaplar WHERE LOWER(ad) = LOWER(?) AND"
-                      " LOWER(yazar) = LOWER(?)",
+                      "SELECT id FROM kitaplar WHERE LOWER(ad) = LOWER(?) AND LOWER(yazar) = LOWER(?)",
                       (ad, yazar),
                   )
                   if c.fetchone():
@@ -395,23 +379,20 @@ with tab_liste:
                     )
                     c.execute(
                         """
-                                        INSERT INTO kitaplar (ad, yazar, kategori, okundu_durum) 
-                                        VALUES (?, ?, ?, 'Okunmadı')
-                                    """,
+                        INSERT INTO kitaplar (ad, yazar, kategori, okundu_durum) 
+                        VALUES (?, ?, ?, 'Okunmadı')
+                        """,
                         (ad, yazar, kategori),
                     )
                     eklenen += 1
 
               conn.commit()
-              st.toast(
-                  f"🎉 {eklenen} kitap eklendi, {atlanan} mükerrer kayıt"
-                  " atlandı."
-              )
+              st.toast(f"🎉 {eklenen} kitap eklendi, {atlanan} mükerrer kayıt atlandı.")
               st.rerun()
-          else:
-            st.error("⚠️ Sütun başlıkları: 'Kategori', 'Isim', 'Yazar' olmalı.")
+            else:
+              st.error("⚠️ Seçilen sayfada aktarılacak yeterli sütun verisi bulunamadı.")
         except Exception as e:
-          st.error(f"Hata: {e}")
+          st.error(f"Hata oluştu: {e}")
 
   # --- FİLTRELER ---
   with st.expander("🔍 Detaylı Filtreleme ve Arama", expanded=False):
@@ -617,4 +598,4 @@ with tab_emanet:
           st.rerun()
     else:
       st.error("Bu ID'ye sahip bir kitap bulunamadı.")
-              
+    

@@ -453,135 +453,109 @@ with tab_liste:
                 except Exception as e:
                     st.error(f"Hata oluştu: {e}")
 
-  # --- FİLTRELER ---
-  with st.expander("🔍 Detaylı Filtreleme ve Arama", expanded=False):
-    col1, col2 = st.columns(2)
-    with col1:
-      arama_metin = st.text_input("Kitap / Yazar Ara")
-    with col2:
-      c.execute("SELECT ad FROM kategoriler ORDER BY ad ASC")
-      turler_filtre = ["Tümü"] + [row[0] for row in c.fetchall()]
-      f_tur = st.selectbox("Tür Filtresi", turler_filtre)
+    # --- FİLTRELER ---
+    with st.expander("🔍 Detaylı Filtreleme ve Arama", expanded=False):
+        col1, col2 = st.columns(2)
+        with col1:
+            arama_metin = st.text_input("Kitap / Yazar Ara")
+        with col2:
+            c.execute("SELECT ad FROM kategoriler ORDER BY ad ASC")
+            turler_filtre = ["Tümü"] + [row[0] for row in c.fetchall()]
+            f_tur = st.selectbox("Tür Filtresi", turler_filtre)
 
-    col3, col4 = st.columns(2)
-    with col3:
-      c.execute("SELECT DISTINCT yazar FROM kitaplar ORDER BY yazar ASC")
-      yazarlar_filtre = ["Tümü"] + [row[0] for row in c.fetchall()]
-      f_yazar = st.selectbox("Yazar Filtresi", yazarlar_filtre)
-    with col4:
-      f_okundu = st.selectbox("Okunma Durumu", ["Tümü", "Okundu", "Okunmadı"])
+        col3, col4 = st.columns(2)
+        with col3:
+            c.execute("SELECT DISTINCT yazar FROM kitaplar ORDER BY yazar ASC")
+            yazarlar_filtre = ["Tümü"] + [row[0] for row in c.fetchall()]
+            f_yazar = st.selectbox("Yazar Filtresi", yazarlar_filtre)
+        with col4:
+            f_okundu = st.selectbox("Okunma Durumu", ["Tümü", "Okundu", "Okunmadı"])
 
-  sorgu = "SELECT * FROM kitaplar WHERE 1=1"
-  params = []
+    sorgu = "SELECT * FROM kitaplar WHERE 1=1"
+    params = []
 
-  if arama_metin:
-    sorgu += " AND (ad LIKE ? OR yazar LIKE ?)"
-    params.extend([f"%{arama_metin}%", f"%{arama_metin}%"])
-  if f_tur != "Tümü":
-    sorgu += " AND kategori = ?"
-    params.append(f_tur)
-  if f_yazar != "Tümü":
-    sorgu += " AND yazar = ?"
-    params.append(f_yazar)
-  if f_okundu != "Tümü":
-    sorgu += " AND okundu_durum = ?"
-    params.append(f_okundu)
+    if arama_metin:
+        sorgu += " AND (ad LIKE ? OR yazar LIKE ?)"
+        params.extend([f"%{arama_metin}%", f"%{arama_metin}%"])
+    if f_tur != "Tümü":
+        sorgu += " AND kategori = ?"
+        params.append(f_tur)
+    if f_yazar != "Tümü":
+        sorgu += " AND yazar = ?"
+        params.append(f_yazar)
+    if f_okundu != "Tümü":
+        sorgu += " AND okundu_durum = ?"
+        params.append(f_okundu)
 
-  c.execute(sorgu, params)
-  kitaplar = c.fetchall()
+    c.execute(sorgu, params)
+    kitaplar = c.fetchall()
 
-  st.divider()
+    st.divider()
 
-  if kitaplar:
-    for k in kitaplar:
-      k_id, k_ad, k_yazar, k_kat, k_durum, k_emanet, k_okundu = k
+    if kitaplar:
+        for k in kitaplar:
+            k_id, k_ad, k_yazar, k_kat, k_durum, k_emanet, k_okundu = k
 
-      with st.expander(f"📘 {k_ad}"):
-        col_detay, col_qr = st.columns([2, 1.2])
+            with st.expander(f"📘 {k_ad}"):
+                col_detay, col_qr = st.columns([2, 1.2])
 
-        with col_detay:
-          st.write(f"**ID:** #{k_id}")
-          st.write(f"**Yazar:** {k_yazar}")
-          st.write(f"**Tür:** {k_kat}")
+                with col_detay:
+                    st.write(f"**ID:** #{k_id}")
+                    st.write(f"**Yazar:** {k_yazar}")
+                    st.write(f"**Tür:** {k_kat}")
 
-          if k_durum == "Emanette":
-            st.error(f"🔴 Emanette: {k_emanet}")
-          else:
-            st.success("🟢 Kütüphanede")
+                    if k_durum == "Emanette":
+                        st.error(f"🔴 Emanette: {k_emanet}")
+                    else:
+                        st.success("🟢 Kütüphanede")
 
-          is_okundu = k_okundu == "Okundu"
-          btn_label = (
-              "✅ Okundu (Okunmadı Yap)"
-              if is_okundu
-              else "📖 Okunmadı (Okundu Yap)"
-          )
+                    is_okundu = k_okundu == "Okundu"
+                    btn_label = (
+                        "✅ Okundu (Okunmadı Yap)"
+                        if is_okundu
+                        else "📖 Okunmadı (Okundu Yap)"
+                    )
 
-          if st.button(
-              btn_label, key=f"btn_okundu_{k_id}", use_container_width=True
-          ):
-            yeni_durum = "Okunmadı" if is_okundu else "Okundu"
-            c.execute(
-                "UPDATE kitaplar SET okundu_durum = ? WHERE id = ?",
-                (yeni_durum, k_id),
-            )
-            conn.commit()
-            st.toast(
-                f"#{k_id} '{k_ad}' durumu '{yeni_durum}' olarak güncellendi!"
-            )
-            st.rerun()
+                    if st.button(
+                        btn_label, key=f"btn_okundu_{k_id}", use_container_width=True
+                    ):
+                        yeni_durum = "Okunmadı" if is_okundu else "Okundu"
+                        c.execute(
+                            "UPDATE kitaplar SET okundu_durum = ? WHERE id = ?",
+                            (yeni_durum, k_id),
+                        )
+                        conn.commit()
+                        st.toast(
+                            f"#{k_id} '{k_ad}' durumu '{yeni_durum}' olarak güncellendi!"
+                        )
+                        st.rerun()
 
-        with col_qr:
-          qr_data = f"KITAP_ID:{k_id} - {k_ad}"
-          encoded_qr_data = urllib.parse.quote(qr_data)
-          qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={encoded_qr_data}"
+                with col_qr:
+                    qr_data = f"KITAP_ID:{k_id} - {k_ad}"
+                    encoded_qr_data = urllib.parse.quote(qr_data)
+                    qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={encoded_qr_data}"
 
-          try:
-            labeled_qr_bytes = generate_labeled_qr(qr_url, k_ad)
+                    try:
+                        labeled_qr_bytes = generate_labeled_qr(qr_url, k_ad)
 
-            st.image(
-                labeled_qr_bytes,
-                caption=f"ID: #{k_id}",
-                use_container_width=True,
-            )
+                        st.image(
+                            labeled_qr_bytes,
+                            caption=f"ID: #{k_id}",
+                            use_container_width=True,
+                        )
 
-            st.download_button(
-                label="📥 QR İndir (.png)",
-                data=labeled_qr_bytes,
-                file_name=f"QR_{k_ad.replace(' ', '_')}.png",
-                mime="image/png",
-                key=f"dl_qr_{k_id}",
-                use_container_width=True,
-            )
-          except Exception:
-            st.caption("QR görseli oluşturulamadı.")
+                        st.download_button(
+                            label="📥 QR İndir (.png)",
+                            data=labeled_qr_bytes,
+                            file_name=f"QR_{k_ad.replace(' ', '_')}.png",
+                            mime="image/png",
+                            key=f"dl_qr_{k_id}",
+                            use_container_width=True,
+                        )
+                    except Exception:
+                        st.caption("QR görseli oluşturulamadı.")
 
-  else:
-    st.info("Kriterlere uygun kitap bulunamadı.")
+    else:
+        st.info("Kriterlere uygun kitap bulunamadı.")
 
-# ==========================================
-# 3. SEKME: EMANET İŞLEMLERİ & QR
-# ==========================================
-with tab_emanet:
-    st.subheader("📲 Emanet / Teslim İşlemleri")
-
-    islem_tipi = st.radio(
-        "Yapmak İstediğiniz İşlem:",
-        ["Emanet Ver", "Emanetten Geri Al"],
-        horizontal=True,
-    )
-
-    kitap_id_manual = st.number_input(
-        "Kitap ID Giriniz:",
-        min_value=1,
-        step=1,
-        value=int(st.session_state["scanned_id"]),
-    )
-
-    st.write("---")
-    st.markdown("📷 **QR Kod Okuyucu (Kamera)**")
-
-    kamera_foto = st.camera_input("QR Kodu Taramak İçin Fotoğraf Çekin")
-
-    if kamera_foto is not None:
-        try:
-            bytes_data = kamera_f
+# ============================

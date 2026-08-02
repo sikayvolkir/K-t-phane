@@ -156,7 +156,7 @@ if c.fetchone()[0] == 0:
       ("Kişisel Gelişim",),
   ]
   c.executemany(
-      "INSERT INTO kategoriler (ad) VALUES (?)" , varsayilan_kategoriler
+      "INSERT INTO kategoriler (ad) VALUES (?)", varsayilan_kategoriler
   )
 
 conn.commit()
@@ -181,9 +181,6 @@ if "form_key" not in st.session_state:
 
 if "scanned_id" not in st.session_state:
   st.session_state["scanned_id"] = 1
-
-if "excel_uploader_key" not in st.session_state:
-  st.session_state["excel_uploader_key"] = 0
 
 # --- SEKMELER ---
 tab_ekle, tab_liste, tab_emanet = st.tabs(
@@ -314,13 +311,10 @@ with tab_liste:
           " olarak işlenir."
       )
 
-      # Dinamik key ile resetlenebilen dosya yükleyici
-      uploader_key = f"excel_file_{st.session_state['excel_uploader_key']}"
       uploaded_file = st.file_uploader(
           "Excel seçin",
           type=["xlsx", "xls", "xlsm"],
           label_visibility="collapsed",
-          key=uploader_key,
       )
 
       if uploaded_file is not None:
@@ -335,129 +329,112 @@ with tab_liste:
           else:
             selected_sheet = sheet_names[0]
 
-          btn_col1, btn_col2 = st.columns(2)
+          if st.button("Onayla ve Yükle", use_container_width=True):
+            df_in = pd.read_excel(
+                uploaded_file, sheet_name=selected_sheet, engine="openpyxl"
+            )
 
-          with btn_col1:
-            onayla_btn = st.button("✅ Onayla ve Yükle", use_container_width=True)
-          with btn_col2:
-            iptal_btn = st.button("❌ İptal Et / Temizle", use_container_width=True)
+            kat_col = next(
+                (
+                    c
+                    for c in df_in.columns
+                    if str(c).strip().lower() in ["kategori", "tür", "tur"]
+                ),
+                None,
+            )
+            isim_col = next(
+                (
+                    c
+                    for c in df_in.columns
+                    if str(c).strip().lower()
+                    in ["isim", "kitap adı", "kitap adi", "ad"]
+                ),
+                None,
+            )
+            yazar_col = next(
+                (
+                    c
+                    for c in df_in.columns
+                    if str(c).strip().lower() in ["yazar", "yazar adı"]
+                ),
+                None,
+            )
 
-          if iptal_btn:
-            st.session_state["excel_uploader_key"] += 1
-            st.toast("🚫 İçe aktarma işlemi iptal edildi.")
-            st.rerun()
-
-          if onayla_btn:
-            with st.spinner("Veriler Excel'den aktarılıyor..."):
+            if not (kat_col and isim_col and yazar_col):
               df_in = pd.read_excel(
-                  uploaded_file, sheet_name=selected_sheet, engine="openpyxl"
+                  uploaded_file,
+                  sheet_name=selected_sheet,
+                  skiprows=1,
+                  header=None,
+                  engine="openpyxl",
               )
+              kat_col = 0 if df_in.shape[1] > 0 else None
+              isim_col = 1 if df_in.shape[1] > 1 else None
+              yazar_col = 2 if df_in.shape[1] > 2 else None
 
-              kat_col = next(
-                  (
-                      c
-                      for c in df_in.columns
-                      if str(c).strip().lower() in ["kategori", "tür", "tur"]
-                  ),
-                  None,
-              )
-              isim_col = next(
-                  (
-                      c
-                      for c in df_in.columns
-                      if str(c).strip().lower()
-                      in ["isim", "kitap adı", "kitap adi", "ad"]
-                  ),
-                  None,
-              )
-              yazar_col = next(
-                  (
-                      c
-                      for c in df_in.columns
-                      if str(c).strip().lower() in ["yazar", "yazar adı"]
-                  ),
-                  None,
-              )
+            if (
+                kat_col is not None
+                and isim_col is not None
+                and yazar_col is not None
+            ):
+              eklenen = 0
+              atlanan = 0
 
-              if not (kat_col and isim_col and yazar_col):
-                df_in = pd.read_excel(
-                    uploaded_file,
-                    sheet_name=selected_sheet,
-                    skiprows=1,
-                    header=None,
-                    engine="openpyxl",
+              for _, row in df_in.iterrows():
+                kategori = (
+                    str(row[kat_col]).strip()
+                    if pd.notna(row[kat_col])
+                    else "Genel"
                 )
-                kat_col = 0 if df_in.shape[1] > 0 else None
-                isim_col = 1 if df_in.shape[1] > 1 else None
-                yazar_col = 2 if df_in.shape[1] > 2 else None
+                ad = (
+                    str(row[isim_col]).strip()
+                    if pd.notna(row[isim_col])
+                    else ""
+                )
+                yazar = (
+                    str(row[yazar_col]).strip()
+                    if pd.notna(row[yazar_col])
+                    else ""
+                )
 
-              if (
-                  kat_col is not None
-                  and isim_col is not None
-                  and yazar_col is not None
-              ):
-                eklenen = 0
-                atlanan = 0
-
-                for _, row in df_in.iterrows():
-                  kategori = (
-                      str(row[kat_col]).strip()
-                      if pd.notna(row[kat_col])
-                      else "Genel"
+                if (
+                    ad
+                    and yazar
+                    and ad.lower() != "nan"
+                    and yazar.lower() != "nan"
+                ):
+                  c.execute(
+                      "SELECT id FROM kitaplar WHERE LOWER(ad) = LOWER(?) AND"
+                      " LOWER(yazar) = LOWER(?)",
+                      (ad, yazar),
                   )
-                  ad = (
-                      str(row[isim_col]).strip()
-                      if pd.notna(row[isim_col])
-                      else ""
-                  )
-                  yazar = (
-                      str(row[yazar_col]).strip()
-                      if pd.notna(row[yazar_col])
-                      else ""
-                  )
-
-                  if (
-                      ad
-                      and yazar
-                      and ad.lower() != "nan"
-                      and yazar.lower() != "nan"
-                  ):
+                  if c.fetchone():
+                    atlanan += 1
+                  else:
                     c.execute(
-                        "SELECT id FROM kitaplar WHERE LOWER(ad) = LOWER(?)"
-                        " AND LOWER(yazar) = LOWER(?)",
-                        (ad, yazar),
+                        "INSERT OR IGNORE INTO kategoriler (ad) VALUES (?)",
+                        (kategori,),
                     )
-                    if c.fetchone():
-                      atlanan += 1
-                    else:
-                      c.execute(
-                          "INSERT OR IGNORE INTO kategoriler (ad) VALUES (?)",
-                          (kategori,),
-                      )
-                      c.execute(
-                          """
-                          INSERT INTO kitaplar (ad, yazar, kategori, okundu_durum) 
-                          VALUES (?, ?, ?, 'Okunmadı')
-                          """,
-                          (ad, yazar, kategori),
-                      )
-                      eklenen += 1
+                    c.execute(
+                        """
+                        INSERT INTO kitaplar (ad, yazar, kategori, okundu_durum) 
+                        VALUES (?, ?, ?, 'Okunmadı')
+                        """,
+                        (ad, yazar, kategori),
+                    )
+                    eklenen += 1
 
-                conn.commit()
-
-                # İşlem bitince dosya yükleyiciyi sıfırla
-                st.session_state["excel_uploader_key"] += 1
-
-                # Bilgilendirme Toast ve Alert
-                st.success(f"🎉 İşlem Tamamlandı!\n- **{eklenen}** yeni kitap eklendi.\n- **{atlanan}** mükerrer kayıt atlandı.")
-                st.toast(f"✅ Aktarım tamamlandı! Toplam {eklenen} kitap eklendi.", icon="🎉")
-                st.rerun()
-
-              else:
-                st.error(
-                    "⚠️ Seçilen sayfada aktarılacak yeterli sütun verisi"
-                    " bulunamadı."
-                )
+              conn.commit()
+              st.toast(
+                  f"🎉 {eklenen} kitap eklendi, {atlanan} mükerrer kayıt"
+                  " atlandı."
+              )
+              st.rerun()
+            else:
+              st.error(
+                  "⚠️ Seçilen sayfada aktarılacak yeterli sütun verisi"
+                  " bulunamadı."
+              )
         except Exception as e:
           st.error(f"Hata oluştu: {e}")
 
@@ -578,6 +555,7 @@ with tab_emanet:
       horizontal=True,
   )
 
+  # QR'dan okunan ID varsa otomatik yazdırılır
   kitap_id_manual = st.number_input(
       "Kitap ID Giriniz:",
       min_value=1,
@@ -656,4 +634,10 @@ with tab_emanet:
           c.execute(
               "UPDATE kitaplar SET durum = 'Kütüphanede', emanet_alan = ''"
               " WHERE id = ?",
-         
+              (k_id,),
+          )
+          conn.commit()
+          st.toast(f"✅ '{ad}' kitabı kütüphaneye teslim alındı!")
+          st.rerun()
+    else:
+      st.error("Bu ID'ye sahip bir kitap bulunamadı.")

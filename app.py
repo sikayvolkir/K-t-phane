@@ -1,7 +1,10 @@
 import io
+import re
 import sqlite3
 import urllib.parse
 import urllib.request
+import cv2
+import numpy as np
 import pandas as pd
 from PIL import Image, ImageDraw, ImageFont
 import streamlit as st
@@ -195,6 +198,9 @@ if "form_key" not in st.session_state:
 if "kamera_acik" not in st.session_state:
   st.session_state["kamera_acik"] = False
 
+if "scanned_id" not in st.session_state:
+  st.session_state["scanned_id"] = 1
+
 # --- SEKMELER ---
 tab_ekle, tab_liste, tab_emanet = st.tabs(
     ["➕ Yeni Kitap Ekle", "📖 Kitap Listesi & Filtreler", "📲 Emanet İşlemleri"]
@@ -330,26 +336,21 @@ with tab_liste:
 
       if uploaded_file is not None:
         try:
-          # Excel'deki sayfa isimlerini oku
           excel_file = pd.ExcelFile(uploaded_file, engine="openpyxl")
           sheet_names = excel_file.sheet_names
 
-          # Birden fazla sayfa varsa kullanıcıya seçtir, 1 tane varsa direkt al
           if len(sheet_names) > 1:
             selected_sheet = st.selectbox("📂 Okunacak Sayfayı Seçin:", sheet_names)
           else:
             selected_sheet = sheet_names[0]
 
           if st.button("Onayla ve Yükle", use_container_width=True):
-            # Dosyayı önce başlıklı oku
             df_in = pd.read_excel(uploaded_file, sheet_name=selected_sheet, engine="openpyxl")
-            cols_clean = [str(col).strip().lower() for col in df_in.columns]
-
+            
             kat_col = next((c for c in df_in.columns if str(c).strip().lower() in ["kategori", "tür", "tur"]), None)
             isim_col = next((c for c in df_in.columns if str(c).strip().lower() in ["isim", "kitap adı", "kitap adi", "ad"]), None)
             yazar_col = next((c for c in df_in.columns if str(c).strip().lower() in ["yazar", "yazar adı"]), None)
 
-            # Başlıklar standart bulunamadıysa: 2. Satırdan itibaren sırayla (0, 1, 2) al
             if not (kat_col and isim_col and yazar_col):
               df_in = pd.read_excel(uploaded_file, sheet_name=selected_sheet, skiprows=1, header=None, engine="openpyxl")
               kat_col = 0 if df_in.shape[1] > 0 else None
@@ -545,7 +546,13 @@ with tab_emanet:
       horizontal=True,
   )
 
-  kitap_id_manual = st.number_input("Kitap ID Giriniz:", min_value=1, step=1)
+  # Kameradan okunan ID varsa başlangıç değeri yap
+  kitap_id_manual = st.number_input(
+      "Kitap ID Giriniz:",
+      min_value=1,
+      step=1,
+      value=int(st.session_state["scanned_id"]),
+  )
 
   if not st.session_state["kamera_acik"]:
     if st.button("📷 QR Kamerasını Aç", use_container_width=True):
@@ -556,7 +563,28 @@ with tab_emanet:
       st.session_state["kamera_acik"] = False
       st.rerun()
 
-    kamera_foto = st.camera_input("QR Kodu Taramak İçin Kamerayı Kullanın")
+    kamera_foto = st.camera_input("QR Kodu Taramak İçin Fotoğraf Çekin")
+
+    if kamera_foto is not None:
+      # Çekilen fotoğrafı OpenCV formatına çevir ve tara
+      bytes_data = kamera_foto.getvalue()
+      np_img = np.frombuffer(bytes_data, np.uint8)
+      img = cv2.imdecode(np_img, cv2.IMREAD_COLOR)
+
+      detector = cv2.QRCodeDetector()
+      decoded_info, points, _ = detector.detectAndDecode(img)
+
+      if decoded_info:
+        # Kodun içinden ID değerini Regex ile yakala (KITAP_ID:X)
+        match = re.search(r"KITAP_ID:(\d+)", decoded_info)
+        if match:
+          found_id = int(match.group(1))
+          st.session_state["scanned_id"] = found_id
+          st.success(f"🎯 QR Kod Başarıyla Okundu! Bulunan Kitap ID: #{found_id}")
+        else:
+          st.warning("QR Kod okundu fakat geçerli bir Kitap ID formatı içermiyor.")
+      else:
+        st.error("⚠️ Fotoğrafta QR Kod tespit edilemedi. Lütfen net bir fotoğraf çekin.")
 
   kisi_adi = ""
   if islem_tipi == "Emanet Ver":
@@ -598,4 +626,4 @@ with tab_emanet:
           st.rerun()
     else:
       st.error("Bu ID'ye sahip bir kitap bulunamadı.")
-    
+              

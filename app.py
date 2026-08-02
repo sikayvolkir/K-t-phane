@@ -85,42 +85,42 @@ st.markdown(
 
 # --- QR KOD VE İSİM BİRLEŞTİRME FONKSİYONU ---
 def generate_labeled_qr(qr_url, book_title):
-  req = urllib.request.Request(qr_url, headers={"User-Agent": "Mozilla/5.0"})
-  with urllib.request.urlopen(req) as response:
-    qr_img = Image.open(io.BytesIO(response.read())).convert("RGB")
+    req = urllib.request.Request(qr_url, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req) as response:
+        qr_img = Image.open(io.BytesIO(response.read())).convert("RGB")
 
-  qr_w, qr_h = qr_img.size
-  text_padding = 40
-  new_h = qr_h + text_padding
+    qr_w, qr_h = qr_img.size
+    text_padding = 40
+    new_h = qr_h + text_padding
 
-  final_img = Image.new("RGB", (qr_w, new_h), "white")
-  final_img.paste(qr_img, (0, 0))
+    final_img = Image.new("RGB", (qr_w, new_h), "white")
+    final_img.paste(qr_img, (0, 0))
 
-  draw = ImageDraw.Draw(final_img)
+    draw = ImageDraw.Draw(final_img)
 
-  try:
-    font = ImageFont.truetype("arial.ttf", 16)
-  except OSError:
-    font = ImageFont.load_default()
+    try:
+        font = ImageFont.truetype("arial.ttf", 16)
+    except OSError:
+        font = ImageFont.load_default()
 
-  bbox = draw.textbbox((0, 0), book_title, font=font)
-  text_w = bbox[2] - bbox[0]
-  x = (qr_w - text_w) / 2
-  y = qr_h + (text_padding - (bbox[3] - bbox[1])) / 2 - 4
+    bbox = draw.textbbox((0, 0), book_title, font=font)
+    text_w = bbox[2] - bbox[0]
+    x = (qr_w - text_w) / 2
+    y = qr_h + (text_padding - (bbox[3] - bbox[1])) / 2 - 4
 
-  draw.text((x, y), book_title, fill="black", font=font)
+    draw.text((x, y), book_title, fill="black", font=font)
 
-  img_byte_arr = io.BytesIO()
-  final_img.save(img_byte_arr, format="PNG")
-  return img_byte_arr.getvalue()
+    img_byte_arr = io.BytesIO()
+    final_img.save(img_byte_arr, format="PNG")
+    return img_byte_arr.getvalue()
 
 
 # --- EXCEL OLUŞTURMA FONKSİYONU ---
 def convert_df_to_excel(df):
-  output = io.BytesIO()
-  with pd.ExcelWriter(output, engine="openpyxl") as writer:
-    df.to_excel(writer, index=False, sheet_name="Kitap Listesi")
-  return output.getvalue()
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name="Kitap Listesi")
+    return output.getvalue()
 
 
 # --- VERİTABANI BAĞLANTISI ---
@@ -148,16 +148,16 @@ CREATE TABLE IF NOT EXISTS kategoriler (
 
 c.execute("SELECT COUNT(*) FROM kategoriler")
 if c.fetchone()[0] == 0:
-  varsayilan_kategoriler = [
-      ("Roman",),
-      ("Tarih",),
-      ("Felsefe",),
-      ("Bilim",),
-      ("Kişisel Gelişim",),
-  ]
-  c.executemany(
-      "INSERT INTO kategoriler (ad) VALUES (?)", varsayilan_kategoriler
-  )
+    varsayilan_kategoriler = [
+        ("Roman",),
+        ("Tarih",),
+        ("Felsefe",),
+        ("Bilim",),
+        ("Kişisel Gelişim",),
+    ]
+    c.executemany(
+        "INSERT INTO kategoriler (ad) VALUES (?)", varsayilan_kategoriler
+    )
 
 conn.commit()
 
@@ -177,13 +177,13 @@ m_col2.metric(label="🔴 Emanetteki Kitap Sayısı", value=emanette_kitap)
 st.divider()
 
 if "form_key" not in st.session_state:
-  st.session_state["form_key"] = 0
+    st.session_state["form_key"] = 0
 
 if "scanned_id" not in st.session_state:
-  st.session_state["scanned_id"] = 1
+    st.session_state["scanned_id"] = 1
 
 if "excel_uploader_key" not in st.session_state:
-  st.session_state["excel_uploader_key"] = 0
+    st.session_state["excel_uploader_key"] = 0
 
 # --- SEKMELER ---
 tab_ekle, tab_liste, tab_emanet = st.tabs(
@@ -194,268 +194,264 @@ tab_ekle, tab_liste, tab_emanet = st.tabs(
 # 1. SEKME: YENİ KİTAP EKLE
 # ==========================================
 with tab_ekle:
-  st.subheader("Sisteme Yeni Kitap Ekle")
+    st.subheader("Sisteme Yeni Kitap Ekle")
 
-  c.execute("SELECT ad FROM kategoriler ORDER BY ad ASC")
-  kategori_listesi = [row[0] for row in c.fetchall()]
+    c.execute("SELECT ad FROM kategoriler ORDER BY ad ASC")
+    kategori_listesi = [row[0] for row in c.fetchall()]
 
-  c.execute(
-      "SELECT DISTINCT yazar FROM kitaplar WHERE yazar != '' ORDER BY yazar ASC"
-  )
-  mevcut_yazarlar = [row[0] for row in c.fetchall()]
+    c.execute(
+        "SELECT DISTINCT yazar FROM kitaplar WHERE yazar != '' ORDER BY yazar ASC"
+    )
+    mevcut_yazarlar = [row[0] for row in c.fetchall()]
 
-  fk = st.session_state["form_key"]
+    fk = st.session_state["form_key"]
 
-  y_ad = st.text_input("Kitap Adı:", key=f"kitap_adi_{fk}")
+    y_ad = st.text_input("Kitap Adı:", key=f"kitap_adi_{fk}")
 
-  yazar_giris = st.text_input(
-      "Yazar Adı Soyadı:",
-      key=f"yazar_adi_{fk}",
-      placeholder="Yazmaya başlayın...",
-  )
+    yazar_giris = st.text_input(
+        "Yazar Adı Soyadı:",
+        key=f"yazar_adi_{fk}",
+        placeholder="Yazmaya başlayın...",
+    )
 
-  if yazar_giris.strip():
-    arama_terim = yazar_giris.strip().lower()
-    tahminler = [y for y in mevcut_yazarlar if arama_terim in y.lower()]
+    if yazar_giris.strip():
+        arama_terim = yazar_giris.strip().lower()
+        tahminler = [y for y in mevcut_yazarlar if arama_terim in y.lower()]
 
-    if tahminler and (
-        len(tahminler) > 1 or tahminler[0].lower() != arama_terim
-    ):
-      st.caption("💡 Otomatik Tahminler:")
-      cols = st.columns(min(len(tahminler), 3))
-      for idx, t_yazar in enumerate(tahminler[:3]):
-        if cols[idx % 3].button(t_yazar, key=f"tahmin_{idx}"):
-          st.session_state[f"yazar_adi_{fk}"] = t_yazar
-          st.rerun()
+        if tahminler and (
+            len(tahminler) > 1 or tahminler[0].lower() != arama_terim
+        ):
+            st.caption("💡 Otomatik Tahminler:")
+            cols = st.columns(min(len(tahminler), 3))
+            for idx, t_yazar in enumerate(tahminler[:3]):
+                if cols[idx % 3].button(t_yazar, key=f"tahmin_{idx}"):
+                    st.session_state[f"yazar_adi_{fk}"] = t_yazar
+                    st.rerun()
 
-  y_kat = st.selectbox("Kitap Türü (Kategori):", kategori_listesi)
+    y_kat = st.selectbox("Kitap Türü (Kategori):", kategori_listesi)
 
-  if st.button("Kitabı Kaydet", use_container_width=True):
-    kaydedilecek_yazar = yazar_giris.strip()
-    kaydedilecek_ad = y_ad.strip()
+    if st.button("Kitabı Kaydet", use_container_width=True):
+        kaydedilecek_yazar = yazar_giris.strip()
+        kaydedilecek_ad = y_ad.strip()
 
-    if kaydedilecek_ad and kaydedilecek_yazar:
-      c.execute(
-          "SELECT id FROM kitaplar WHERE LOWER(ad) = LOWER(?) AND LOWER(yazar)"
-          " = LOWER(?)",
-          (kaydedilecek_ad, kaydedilecek_yazar),
-      )
-      if c.fetchone():
-        st.error(
-            f"⚠️ **Uyarı:** '{kaydedilecek_ad}' isimli kitap zaten kayıtlı!"
-        )
-      else:
-        c.execute(
-            """
+        if kaydedilecek_ad and kaydedilecek_yazar:
+            c.execute(
+                "SELECT id FROM kitaplar WHERE LOWER(ad) = LOWER(?) AND LOWER(yazar) = LOWER(?)",
+                (kaydedilecek_ad, kaydedilecek_yazar),
+            )
+            if c.fetchone():
+                st.error(
+                    f"⚠️ **Uyarı:** '{kaydedilecek_ad}' isimli kitap zaten kayıtlı!"
+                )
+            else:
+                c.execute(
+                    """
                     INSERT INTO kitaplar (ad, yazar, kategori, okundu_durum) 
                     VALUES (?, ?, ?, 'Okunmadı')
-                """,
-            (kaydedilecek_ad, kaydedilecek_yazar, y_kat),
-        )
-        conn.commit()
+                    """,
+                    (kaydedilecek_ad, kaydedilecek_yazar, y_kat),
+                )
+                conn.commit()
 
-        st.session_state["form_key"] += 1
-        st.toast(
-            f"✅ '{kaydedilecek_ad}' kütüphaneye başarıyla eklendi!", icon="📚"
-        )
-        st.rerun()
-    else:
-      st.warning("Lütfen Kitap Adı ve Yazar alanlarını doldurun.")
+                st.session_state["form_key"] += 1
+                st.toast(
+                    f"✅ '{kaydedilecek_ad}' kütüphaneye başarıyla eklendi!", icon="📚"
+                )
+                st.rerun()
+        else:
+            st.warning("Lütfen Kitap Adı ve Yazar alanlarını doldurun.")
 
 # ==========================================
 # 2. SEKME: KİTAP LİSTESİ VE FİLTRELER
 # ==========================================
 with tab_liste:
-  st.subheader("📖 Kitap Envanteri")
+    st.subheader("📖 Kitap Envanteri")
 
-  excel_col1, excel_col2 = st.columns(2)
+    excel_col1, excel_col2 = st.columns(2)
 
-  # Dışa Aktarma
-  c.execute(
-      "SELECT kategori AS Kategori, ad AS Isim, yazar AS Yazar, durum AS"
-      " Durum, emanet_alan AS 'Emanet Alan', okundu_durum AS 'Okunma Durumu'"
-      " FROM kitaplar ORDER BY id DESC"
-  )
-  tum_kitaplar_raw = c.fetchall()
-
-  if tum_kitaplar_raw:
-    df_export = pd.DataFrame(
-        tum_kitaplar_raw,
-        columns=[
-            "Kategori",
-            "Isim",
-            "Yazar",
-            "Durum",
-            "Emanet Alan",
-            "Okunma Durumu",
-        ],
+    # Dışa Aktarma
+    c.execute(
+        "SELECT kategori AS Kategori, ad AS Isim, yazar AS Yazar, durum AS"
+        " Durum, emanet_alan AS 'Emanet Alan', okundu_durum AS 'Okunma Durumu'"
+        " FROM kitaplar ORDER BY id DESC"
     )
-    excel_data = convert_df_to_excel(df_export)
+    tum_kitaplar_raw = c.fetchall()
 
-    excel_col1.download_button(
-        label="📤 Excel Dışa Aktar",
-        data=excel_data,
-        file_name="Kutuphane_Kitap_Listesi.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=True,
-    )
-  else:
-    excel_col1.button(
-        "📤 Excel Dışa Aktar", disabled=True, use_container_width=True
-    )
+    if tum_kitaplar_raw:
+        df_export = pd.DataFrame(
+            tum_kitaplar_raw,
+            columns=[
+                "Kategori",
+                "Isim",
+                "Yazar",
+                "Durum",
+                "Emanet Alan",
+                "Okunma Durumu",
+            ],
+        )
+        excel_data = convert_df_to_excel(df_export)
 
-  # İçe Aktarma
-  with excel_col2:
-    show_import = st.popover("📥 Excel İçe Aktar", use_container_width=True)
-    with show_import:
-      st.markdown("**Excel'den Kitap Yükle**")
-      st.caption(
-          "Sütunlar bulunamazsa 2. satırdan itibaren (Kategori, İsim, Yazar)"
-          " olarak işlenir."
-      )
+        excel_col1.download_button(
+            label="📤 Excel Dışa Aktar",
+            data=excel_data,
+            file_name="Kutuphane_Kitap_Listesi.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+        )
+    else:
+        excel_col1.button(
+            "📤 Excel Dışa Aktar", disabled=True, use_container_width=True
+        )
 
-      uploader_key = f"excel_file_{st.session_state['excel_uploader_key']}"
-      uploaded_file = st.file_uploader(
-          "Excel seçin",
-          type=["xlsx", "xls", "xlsm"],
-          label_visibility="collapsed",
-          key=uploader_key,
-      )
-
-      if uploaded_file is not None:
-        try:
-          excel_file = pd.ExcelFile(uploaded_file, engine="openpyxl")
-          sheet_names = excel_file.sheet_names
-
-          if len(sheet_names) > 1:
-            selected_sheet = st.selectbox(
-                "📂 Okunacak Sayfayı Seçin:", sheet_names
+    # İçe Aktarma
+    with excel_col2:
+        show_import = st.popover("📥 Excel İçe Aktar", use_container_width=True)
+        with show_import:
+            st.markdown("**Excel'den Kitap Yükle**")
+            st.caption(
+                "Sütunlar bulunamazsa 2. satırdan itibaren (Kategori, İsim, Yazar)"
+                " olarak işlenir."
             )
-          else:
-            selected_sheet = sheet_names[0]
 
-          btn_col1, btn_col2 = st.columns(2)
+            uploader_key = f"excel_file_{st.session_state['excel_uploader_key']}"
+            uploaded_file = st.file_uploader(
+                "Excel seçin",
+                type=["xlsx", "xls", "xlsm"],
+                label_visibility="collapsed",
+                key=uploader_key,
+            )
 
-          with btn_col1:
-            onayla_btn = st.button("✅ Onayla ve Yükle", use_container_width=True)
-          with btn_col2:
-            iptal_btn = st.button("❌ İptal Et / Temizle", use_container_width=True)
+            if uploaded_file is not None:
+                try:
+                    excel_file = pd.ExcelFile(uploaded_file, engine="openpyxl")
+                    sheet_names = excel_file.sheet_names
 
-          if iptal_btn:
-            st.session_state["excel_uploader_key"] += 1
-            st.toast("🚫 İçe aktarma işlemi iptal edildi.")
-            st.rerun()
-
-          if onayla_btn:
-            with st.spinner("Veriler Excel'den aktarılıyor..."):
-              df_in = pd.read_excel(
-                  uploaded_file, sheet_name=selected_sheet, engine="openpyxl"
-              )
-
-              kat_col = next(
-                  (
-                      c
-                      for c in df_in.columns
-                      if str(c).strip().lower() in ["kategori", "tür", "tur"]
-                  ),
-                  None,
-              )
-              isim_col = next(
-                  (
-                      c
-                      for c in df_in.columns
-                      if str(c).strip().lower()
-                      in ["isim", "kitap adı", "kitap adi", "ad"]
-                  ),
-                  None,
-              )
-              yazar_col = next(
-                  (
-                      c
-                      for c in df_in.columns
-                      if str(c).strip().lower() in ["yazar", "yazar adı"]
-                  ),
-                  None,
-              )
-
-              if not (kat_col and isim_col and yazar_col):
-                df_in = pd.read_excel(
-                    uploaded_file,
-                    sheet_name=selected_sheet,
-                    skiprows=1,
-                    header=None,
-                    engine="openpyxl",
-                )
-                kat_col = 0 if df_in.shape[1] > 0 else None
-                isim_col = 1 if df_in.shape[1] > 1 else None
-                yazar_col = 2 if df_in.shape[1] > 2 else None
-
-              if (
-                  kat_col is not None
-                  and isim_col is not None
-                  and yazar_col is not None
-              ):
-                eklenen = 0
-                atlanan = 0
-
-                for _, row in df_in.iterrows():
-                  kategori = (
-                      str(row[kat_col]).strip()
-                      if pd.notna(row[kat_col])
-                      else "Genel"
-                  )
-                  ad = (
-                      str(row[isim_col]).strip()
-                      if pd.notna(row[isim_col])
-                      else ""
-                  )
-                  yazar = (
-                      str(row[yazar_col]).strip()
-                      if pd.notna(row[yazar_col])
-                      else ""
-                  )
-
-                  if (
-                      ad
-                      and yazar
-                      and ad.lower() != "nan"
-                      and yazar.lower() != "nan"
-                  ):
-                    c.execute(
-                        "SELECT id FROM kitaplar WHERE LOWER(ad) = LOWER(?)"
-                        " AND LOWER(yazar) = LOWER(?)",
-                        (ad, yazar),
-                    )
-                    if c.fetchone():
-                      atlanan += 1
+                    if len(sheet_names) > 1:
+                        selected_sheet = st.selectbox(
+                            "📂 Okunacak Sayfayı Seçin:", sheet_names
+                        )
                     else:
-                      c.execute(
-                          "INSERT OR IGNORE INTO kategoriler (ad) VALUES (?)",
-                          (kategori,),
-                      )
-                      c.execute(
-                          """
-                          INSERT INTO kitaplar (ad, yazar, kategori, okundu_durum) 
-                          VALUES (?, ?, ?, 'Okunmadı')
-                          """,
-                          (ad, yazar, kategori),
-                      )
-                      eklenen += 1
+                        selected_sheet = sheet_names[0]
 
-                conn.commit()
+                    btn_col1, btn_col2 = st.columns(2)
 
-                st.session_state["excel_uploader_key"] += 1
-                st.success(f"🎉 İşlem Tamamlandı!\n- **{eklenen}** yeni kitap eklendi.\n- **{atlanan}** mükerrer kayıt atlandı.")
-                st.toast(f"✅ Aktarım tamamlandı! Toplam {eklenen} kitap eklendi.", icon="🎉")
-                st.rerun()
+                    with btn_col1:
+                        onayla_btn = st.button("✅ Onayla ve Yükle", use_container_width=True)
+                    with btn_col2:
+                        iptal_btn = st.button("❌ İptal Et / Temizle", use_container_width=True)
 
-              else:
-                st.error(
-                    "⚠️ Seçilen sayfada aktarılacak yeterli sütun verisi"
-                    " bulunamadı."
-                )
-        except Exception as e:
-          st.error(f"Hata oluştu: {e}")
+                    if iptal_btn:
+                        st.session_state["excel_uploader_key"] += 1
+                        st.toast("🚫 İçe aktarma işlemi iptal edildi.")
+                        st.rerun()
+
+                    if onayla_btn:
+                        with st.spinner("Veriler Excel'den aktarılıyor..."):
+                            df_in = pd.read_excel(
+                                uploaded_file, sheet_name=selected_sheet, engine="openpyxl"
+                            )
+
+                            kat_col = next(
+                                (
+                                    col
+                                    for col in df_in.columns
+                                    if str(col).strip().lower() in ["kategori", "tür", "tur"]
+                                ),
+                                None,
+                            )
+                            isim_col = next(
+                                (
+                                    col
+                                    for col in df_in.columns
+                                    if str(col).strip().lower() in ["isim", "kitap adı", "kitap adi", "ad"]
+                                ),
+                                None,
+                            )
+                            yazar_col = next(
+                                (
+                                    col
+                                    for col in df_in.columns
+                                    if str(col).strip().lower() in ["yazar", "yazar adı"]
+                                ),
+                                None,
+                            )
+
+                            if not (kat_col and isim_col and yazar_col):
+                                df_in = pd.read_excel(
+                                    uploaded_file,
+                                    sheet_name=selected_sheet,
+                                    skiprows=1,
+                                    header=None,
+                                    engine="openpyxl",
+                                )
+                                kat_col = 0 if df_in.shape[1] > 0 else None
+                                isim_col = 1 if df_in.shape[1] > 1 else None
+                                yazar_col = 2 if df_in.shape[1] > 2 else None
+
+                            if (
+                                kat_col is not None
+                                and isim_col is not None
+                                and yazar_col is not None
+                            ):
+                                eklenen = 0
+                                atlanan = 0
+
+                                for _, row in df_in.iterrows():
+                                    kategori = (
+                                        str(row[kat_col]).strip()
+                                        if pd.notna(row[kat_col])
+                                        else "Genel"
+                                    )
+                                    ad = (
+                                        str(row[isim_col]).strip()
+                                        if pd.notna(row[isim_col])
+                                        else ""
+                                    )
+                                    yazar = (
+                                        str(row[yazar_col]).strip()
+                                        if pd.notna(row[yazar_col])
+                                        else ""
+                                    )
+
+                                    if (
+                                        ad
+                                        and yazar
+                                        and ad.lower() != "nan"
+                                        and yazar.lower() != "nan"
+                                    ):
+                                        c.execute(
+                                            "SELECT id FROM kitaplar WHERE LOWER(ad) = LOWER(?) AND LOWER(yazar) = LOWER(?)",
+                                            (ad, yazar),
+                                        )
+                                        if c.fetchone():
+                                            atlanan += 1
+                                        else:
+                                            c.execute(
+                                                "INSERT OR IGNORE INTO kategoriler (ad) VALUES (?)",
+                                                (kategori,),
+                                            )
+                                            c.execute(
+                                                """
+                                                INSERT INTO kitaplar (ad, yazar, kategori, okundu_durum) 
+                                                VALUES (?, ?, ?, 'Okunmadı')
+                                                """,
+                                                (ad, yazar, kategori),
+                                            )
+                                            eklenen += 1
+
+                                conn.commit()
+
+                                st.session_state["excel_uploader_key"] += 1
+                                st.success(f"🎉 İşlem Tamamlandı!\n- **{eklenen}** yeni kitap eklendi.\n- **{atlanan}** mükerrer kayıt atlandı.")
+                                st.toast(f"✅ Aktarım tamamlandı! Toplam {eklenen} kitap eklendi.", icon="🎉")
+                                st.rerun()
+
+                            else:
+                                st.error(
+                                    "⚠️ Seçilen sayfada aktarılacak yeterli sütun verisi bulunamadı."
+                                )
+                except Exception as e:
+                    st.error(f"Hata oluştu: {e}")
 
   # --- FİLTRELER ---
   with st.expander("🔍 Detaylı Filtreleme ve Arama", expanded=False):
@@ -566,96 +562,26 @@ with tab_liste:
 # 3. SEKME: EMANET İŞLEMLERİ & QR
 # ==========================================
 with tab_emanet:
-  st.subheader("📲 Emanet / Teslim İşlemleri")
+    st.subheader("📲 Emanet / Teslim İşlemleri")
 
-  islem_tipi = st.radio(
-      "Yapmak İstediğiniz İşlem:",
-      ["Emanet Ver", "Emanetten Geri Al"],
-      horizontal=True,
-  )
+    islem_tipi = st.radio(
+        "Yapmak İstediğiniz İşlem:",
+        ["Emanet Ver", "Emanetten Geri Al"],
+        horizontal=True,
+    )
 
-  kitap_id_manual = st.number_input(
-      "Kitap ID Giriniz:",
-      min_value=1,
-      step=1,
-      value=int(st.session_state["scanned_id"]),
-  )
+    kitap_id_manual = st.number_input(
+        "Kitap ID Giriniz:",
+        min_value=1,
+        step=1,
+        value=int(st.session_state["scanned_id"]),
+    )
 
-  st.write("---")
-  st.markdown("📷 **QR Kod Okuyucu (Kamera)**")
+    st.write("---")
+    st.markdown("📷 **QR Kod Okuyucu (Kamera)**")
 
-  kamera_foto = st.camera_input("QR Kodu Taramak İçin Fotoğraf Çekin")
+    kamera_foto = st.camera_input("QR Kodu Taramak İçin Fotoğraf Çekin")
 
-  if kamera_foto is not None:
-    try:
-      bytes_data = kamera_foto.getvalue()
-      np_img = np.frombuffer(bytes_data, np.uint8)
-      img = cv2.imdecode(np_img, cv2.IMREAD_COLOR)
-
-      detector = cv2.QRCodeDetector()
-      decoded_info, points, _ = detector.detectAndDecode(img)
-
-      if decoded_info:
-        match = re.search(r"KITAP_ID:(\d+)", decoded_info)
-        if match:
-          found_id = int(match.group(1))
-          if st.session_state["scanned_id"] != found_id:
-            st.session_state["scanned_id"] = found_id
-            st.success(
-                f"🎯 QR Kod Başarıyla Okundu! Bulunan Kitap ID: #{found_id}"
-            )
-            st.rerun()
-        else:
-          st.warning(
-              "QR Kod okundu fakat sistemle uyumlu Kitap ID içermiyor."
-          )
-      else:
-        st.error(
-            "⚠️ Koddaki QR algılanamadı. Lütfen QR kodu kameraya daha yakın ve"
-            " net tutarak tekrar fotoğraf çekin."
-        )
-    except Exception as e:
-      st.error(f"Kamera işlemede hata: {e}")
-
-  st.write("---")
-
-  kisi_adi = ""
-  if islem_tipi == "Emanet Ver":
-    kisi_adi = st.text_input("Emanet Edilecek Kişinin Adı Soyadı:")
-
-  if st.button("İşlemi Onayla ve Kaydet", use_container_width=True):
-    c.execute("SELECT * FROM kitaplar WHERE id = ?", (kitap_id_manual,))
-    kitap = c.fetchone()
-
-    if kitap:
-      k_id, ad, yazar, kat, durum, emanet_alan, okundu = kitap
-
-      if islem_tipi == "Emanet Ver":
-        if durum == "Emanette":
-          st.error(f"Bu kitap zaten **{emanet_alan}** isimli kişide!")
-        elif not kisi_adi.strip():
-          st.warning("Lütfen kitabı alacak kişinin adını girin.")
-        else:
-          c.execute(
-              "UPDATE kitaplar SET durum = 'Emanette', emanet_alan = ? WHERE"
-              " id = ?",
-              (kisi_adi.strip(), k_id),
-          )
-          conn.commit()
-          st.toast(f"✅ '{ad}' kitabı **{kisi_adi}** kişisine verildi!")
-          st.rerun()
-
-      elif islem_tipi == "Emanetten Geri Al":
-        if durum == "Kütüphanede":
-          st.info("Bu kitap zaten kütüphanede görünüyor.")
-        else:
-          c.execute(
-              "UPDATE kitaplar SET durum = 'Kütüphanede', emanet_alan = ''"
-              " WHERE id = ?",
-              (k_id,),
-          )
-          conn.commit()
-          st.toast(f"✅ '{ad}' kitabı kütüphaneye teslim alındı!")
-          st.rerun()
-    else:
-      st.error(
+    if kamera_foto is not None:
+        try:
+            bytes_data = kamera_f

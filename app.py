@@ -6,11 +6,11 @@ st.set_page_config(
     page_title="Kütüphane Yönetimi", page_icon="📚", layout="centered"
 )
 
-# --- VERİTABANI BAĞLANTISI ---
+# --- VERİTABANI BAĞLANTISI VE TABLO YAPILANDIRMASI ---
 conn = sqlite3.connect("kutuphane.db", check_same_thread=False)
 c = conn.cursor()
 
-# Eski uyumsuz tablo varsa kaldırıp temiz tablo oluşturalım (Hatayı çözen kısım)
+# Kitaplar Tablosu
 c.execute("""
 CREATE TABLE IF NOT EXISTS kitaplar (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -18,146 +18,279 @@ CREATE TABLE IF NOT EXISTS kitaplar (
     yazar TEXT NOT NULL,
     kategori TEXT,
     durum TEXT DEFAULT 'Kütüphanede',
-    emanet_alan TEXT DEFAULT ''
+    emanet_alan TEXT DEFAULT '',
+    okundu_durum TEXT DEFAULT 'Okunmadı'
 )
 """)
-conn.commit()
 
-# Mevcut tabloda eksik sütun kontrolü (Garantili Çözüm)
-try:
-  c.execute("SELECT durum, emanet_alan FROM kitaplar LIMIT 1")
-except sqlite3.OperationalError:
-  # Eğer sütunlar eksikse tabloyu baştan temizce kur
-  c.execute("DROP TABLE IF EXISTS kitaplar")
-  c.execute("""
-    CREATE TABLE kitaplar (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        ad TEXT NOT NULL,
-        yazar TEXT NOT NULL,
-        kategori TEXT,
-        durum TEXT DEFAULT 'Kütüphanede',
-        emanet_alan TEXT DEFAULT ''
-    )
-    """)
-  conn.commit()
+# Kategoriler (Türler) Tablosu
+c.execute("""
+CREATE TABLE IF NOT EXISTS kategoriler (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ad TEXT UNIQUE NOT NULL
+)
+""")
+
+# Varsayılan Türleri Ekle (Eğer boşsa)
+c.execute("SELECT COUNT(*) FROM kategoriler")
+if c.fetchone()[0] == 0:
+  varsayilan_kategoriler = [
+      ("Roman",),
+      ("Tarih",),
+      ("Felsefe",),
+      ("Bilim",),
+      ("Kişisel Gelişim",),
+  ]
+  c.executemany(
+      "INSERT INTO kategoriler (ad) VALUES (?)", varsayilan_kategoriler
+  )
+
+conn.commit()
 
 st.title("📚 Kütüphane Yönetim Sistemi")
 
-# --- SEKMELER (TABS) ---
-tab_emanet, tab_liste, tab_ekle = st.tabs(
-    ["📲 Emanet / Teslim", "📖 Kitap Listesi", "➕ Yeni Kitap Ekle"]
+# --- SEKMELER ---
+tab_ekle, tab_liste, tab_emanet = st.tabs(
+    ["➕ Yeni Kitap Ekle", "📖 Kitap Listesi & Filtreler", "📲 Emanet İşlemleri"]
 )
 
 # ==========================================
-# 1. SEKME: EMANET VE TESLİM İŞLEMLERİ
+# 1. SEKME: YENİ KİTAP EKLE (ANA EKRAN)
+# ==========================================
+with tab_ekle:
+  st.subheader("Sisteme Yeni Kitap Ekle")
+
+  # Dinamik Türleri Çek
+  c.execute("SELECT ad FROM kategoriler ORDER BY ad ASC")
+  kategori_listesi = [row[0] for row in c.fetchall()]
+
+  # Mevcut Yazarları Çek (Otomatik Kolaylık İçin)
+  c.execute("SELECT DISTINCT yazar FROM kitaplar WHERE yazar != '' ORDER BY yazar ASC")
+  mevcut_yazarlar = [row[0] for row in c.fetchall()]
+
+  y_ad = st.text_input("Kitap Adı:")
+
+  # Yazar Otomatik Tamamlama / Seçim + Manuel Giriş
+  y_yazar_secim = st.selectbox(
+      "Önceki Yazarlardan Seç (İsteğe Bağlı):",
+      ["-- Yeni Yazar Girin --"] + mevcut_yazarlar,
+  )
+  if y_yazar_secim == "-- Yeni Yazar Girin --":
+    y_yazar = st.text_input("Yazar Adı Soyadı:")
+  else:
+    y_yazar = st.text_input("Yazar Adı Soyadı:", value=y_yazar_secim)
+
+  y_kat = st.selectbox("Kitap Türü (Kategori):", kategori_listesi)
+  y_okundu = st.radio(
+      "Okunma Durumu:", ["Okunmadı", "Okundu"], horizontal=True
+  )
+
+  if st.button("Kitabı Kaydet", use_container_width=True):
+    if y_ad.strip() and y_yazar.strip():
+      # Mükerrer Kayıt Kontrolü
+      c.execute(
+          "SELECT id FROM kitaplar WHERE LOWER(ad) = LOWER(?) AND LOWER(yazar)"
+          " = LOWER(?)",
+          (y_ad.strip(), y_yazar.strip()),
+      )
+      var_mi = c.fetchone()
+
+      if var_mi:
+        st.error(
+            f"⚠️ **Uyarı:** '{y_ad}' isimli kitap **{y_yazar}** yazarı ile zaten"
+            " kütüphanede kayıtlı!"
+        )
+      else:
+        c.execute(
+            """
+                    INSERT INTO kitaplar (ad, yazar, kategori, okundu_durum) 
+                    VALUES (?, ?, ?, ?)
+                """,
+            (y_ad.strip(), y_yazar.strip(), y_kat, y_okundu),
+        )
+        conn.commit()
+        st.success(f"✅ '{y_ad}' başarıyla kütüphaneye eklendi!")
+        st.rerun()
+    else:
+      st.warning("Lütfen Kitap Adı ve Yazar alanlarını boş bırakmayın.")
+
+# ==========================================
+# 2. SEKME: KİTAP LİSTESİ, FİLTRELER VE TÜR AYARLARI
+# ==========================================
+with tab_liste:
+  st.subheader("📖 Kitap Envanteri")
+
+  # --- FİLTRELEME ALANI ---
+  with st.expander("🔍 Detaylı Filtreleme ve Arama", expanded=True):
+    col1, col2 = st.columns(2)
+    with col1:
+      arama_metin = st.text_input("Kitap / Yazar Ara")
+    with col2:
+      # Filtre için Türleri Çek
+      c.execute("SELECT ad FROM kategoriler ORDER BY ad ASC")
+      turler_filtre = ["Tümü"] + [row[0] for row in c.fetchall()]
+      f_tur = st.selectbox("Tür Filtresi", turler_filtre)
+
+    col3, col4 = st.columns(2)
+    with col3:
+      # Filtre için Yazarları Çek
+      c.execute("SELECT DISTINCT yazar FROM kitaplar ORDER BY yazar ASC")
+      yazarlar_filtre = ["Tümü"] + [row[0] for row in c.fetchall()]
+      f_yazar = st.selectbox("Yazar Filtresi", yazarlar_filtre)
+    with col4:
+      f_okundu = st.selectbox(
+          "Okunma Durumu", ["Tümü", "Okundu", "Okunmadı"]
+      )
+
+  # Sorgu Oluşturma
+  sorgu = "SELECT * FROM kitaplar WHERE 1=1"
+  params = []
+
+  if arama_metin:
+    sorgu += " AND (ad LIKE ? OR yazar LIKE ?)"
+    params.extend([f"%{arama_metin}%", f"%{arama_metin}%"])
+  if f_tur != "Tümü":
+    sorgu += " AND kategori = ?"
+    params.append(f_tur)
+  if f_yazar != "Tümü":
+    sorgu += " AND yazar = ?"
+    params.append(f_yazar)
+  if f_okundu != "Tümü":
+    sorgu += " AND okundu_durum = ?"
+    params.append(f_okundu)
+
+  c.execute(sorgu, params)
+  kitaplar = c.fetchall()
+
+  st.divider()
+
+  # Listeleme
+  if kitaplar:
+    for k in kitaplar:
+      k_id, k_ad, k_yazar, k_kat, k_durum, k_emanet, k_okundu = k
+      with st.container():
+        c_left, c_right = st.columns([3, 1])
+        with c_left:
+          st.markdown(f"### #{k_id} - {k_ad}")
+          st.write(
+              f"**Yazar:** {k_yazar} | **Tür:** {k_kat} | **Okunma:**"
+              f" {k_okundu}"
+          )
+          if k_durum == "Emanette":
+            st.error(f"🔴 Emanette: {k_emanet}")
+          else:
+            st.success("🟢 Kütüphanede")
+
+        with c_right:
+          # Okundu Durumu Hızlı Değiştirme
+          yeni_durum = "Okunmadı" if k_okundu == "Okundu" else "Okundu"
+          if st.button(
+              f"Mark: {yeni_durum}", key=f"btn_okundu_{k_id}"
+          ):
+            c.execute(
+                "UPDATE kitaplar SET okundu_durum = ? WHERE id = ?",
+                (yeni_durum, k_id),
+            )
+            conn.commit()
+            st.rerun()
+        st.divider()
+  else:
+    st.info("Kriterlere uygun kitap bulunamadı.")
+
+  # --- KİTAP TÜRLERİ (KATEGORİ) YÖNETİM AYARI ---
+  st.write("---")
+  with st.expander("⚙️ Kitap Türü (Kategori) Ayarları"):
+    st.write("**Mevcut Türleri Yönetin:**")
+
+    c.execute("SELECT id, ad FROM kategoriler ORDER BY ad ASC")
+    kategoriler = c.fetchall()
+
+    # Tür Ekleme
+    yeni_tur = st.text_input("Yeni Tür Adı:")
+    if st.button("Tür Ekle"):
+      if yeni_tur.strip():
+        try:
+          c.execute(
+              "INSERT INTO kategoriler (ad) VALUES (?)", (yeni_tur.strip(),)
+          )
+          conn.commit()
+          st.success(f"'{yeni_tur}' türü eklendi!")
+          st.rerun()
+        except sqlite3.IntegrityError:
+          st.warning("Bu tür zaten mevcut.")
+      else:
+        st.warning("Lütfen bir tür adı girin.")
+
+    st.write("---")
+    # Tür Silme
+    if kategoriler:
+      silinecek_tur = st.selectbox(
+          "Silinecek Türü Seçin:", [k[1] for k in kategoriler]
+      )
+      if st.button("Seçili Türü Sil"):
+        c.execute("DELETE FROM kategoriler WHERE ad = ?", (silinecek_tur,))
+        conn.commit()
+        st.success(f"'{silinecek_tur}' türü silindi!")
+        st.rerun()
+
+# ==========================================
+# 3. SEKME: EMANET İŞLEMLERİ & QR
 # ==========================================
 with tab_emanet:
-  st.subheader("Kitap Teslim / Emanet Kaydı")
+  st.subheader("📲 QR Kamera ile Emanet / Teslim")
 
-  kitap_id_input = st.number_input(
-      "Kitap ID / QR Kodu Numarası:", min_value=1, step=1
+  islem_tipi = st.radio(
+      "Yapmak İstediğiniz İşlem:",
+      ["Emanet Ver", "Emanetten Geri Al"],
+      horizontal=True,
   )
-  st.camera_input("QR Kod Taraması (Kamera)")
 
-  if st.button("Kitabı Sorgula"):
-    c.execute("SELECT * FROM kitaplar WHERE id = ?", (kitap_id_input,))
+  kitap_id_manual = st.number_input(
+      "Kitap ID (Veya QR Kamera Açın):", min_value=1, step=1
+  )
+  kamera_foto = st.camera_input("QR Kodu Taramak İçin Kamerayı Açın")
+
+  kisi_adi = ""
+  if islem_tipi == "Emanet Ver":
+    kisi_adi = st.text_input("Emanet Edilecek Kişinin Adı Soyadı:")
+
+  if st.button("İşlemi Onayla ve Kaydet", use_container_width=True):
+    c.execute("SELECT * FROM kitaplar WHERE id = ?", (kitap_id_manual,))
     kitap = c.fetchone()
 
     if kitap:
-      k_id, ad, yazar, kategori, durum, emanet_alan = kitap
-      st.info(
-          f"**Kitap Adı:** {ad}\n\n**Yazar:** {yazar}\n\n**Mevcut Durum:**"
-          f" {durum}"
-      )
+      k_id, ad, yazar, kat, durum, emanet_alan, okundu = kitap
 
-      if durum == "Emanette":
-        st.warning(f"Bu kitap şu an **{emanet_alan}** isimli kişide.")
-        if st.button("Kitabı Geri Teslim Al"):
+      if islem_tipi == "Emanet Ver":
+        if durum == "Emanette":
+          st.error(f"Bu kitap zaten **{emanet_alan}** isimli kişide!")
+        elif not kisi_adi.strip():
+          st.warning("Lütfen kitabı alacak kişinin adını girin.")
+        else:
+          c.execute(
+              "UPDATE kitaplar SET durum = 'Emanette', emanet_alan = ? WHERE"
+              " id = ?",
+              (kisi_adi.strip(), k_id),
+          )
+          conn.commit()
+          st.success(
+              f"✅ '{ad}' kitabı başarıyla **{kisi_adi}** kişisine teslim"
+              " edildi!"
+          )
+          st.rerun()
+
+      elif islem_tipi == "Emanetten Geri Al":
+        if durum == "Kütüphanede":
+          st.info("Bu kitap zaten kütüphanede görünüyor.")
+        else:
           c.execute(
               "UPDATE kitaplar SET durum = 'Kütüphanede', emanet_alan = ''"
               " WHERE id = ?",
               (k_id,),
           )
           conn.commit()
-          st.success("Kitap başarıyla kütüphaneye teslim alındı!")
+          st.success(f"✅ '{ad}' kitabı kütüphaneye geri teslim alındı!")
           st.rerun()
-      else:
-        kisi = st.text_input("Emanet Alacak Kişinin Adı Soyadı:")
-        if st.button("Emanet Ver"):
-          if kisi.strip():
-            c.execute(
-                "UPDATE kitaplar SET durum = 'Emanette', emanet_alan = ? WHERE"
-                " id = ?",
-                (kisi, k_id),
-            )
-            conn.commit()
-            st.success(f"Kitap **{kisi}** kişisine teslim edildi!")
-            st.rerun()
-          else:
-            st.error("Lütfen teslim edilecek kişinin adını girin.")
     else:
-      st.error("Bu ID'ye ait kayıtlı kitap bulunamadı.")
-
-# ==========================================
-# 2. SEKME: KİTAP LİSTESİ VE ARAMA
-# ==========================================
-with tab_liste:
-  st.subheader("Kitap Envanteri & Arama")
-
-  col1, col2 = st.columns(2)
-  with col1:
-    arama = st.text_input("🔍 Kitap / Yazar Ara")
-  with col2:
-    durum_filtre = st.selectbox(
-        "Durum Filtresi", ["Tümü", "Kütüphanede", "Emanette"]
-    )
-
-  sorgu = "SELECT * FROM kitaplar WHERE 1=1"
-  params = []
-
-  if arama:
-    sorgu += " AND (ad LIKE ? OR yazar LIKE ?)"
-    params.extend([f"%{arama}%", f"%{arama}%"])
-
-  if durum_filtre != "Tümü":
-    sorgu += " AND durum = ?"
-    params.append(durum_filtre)
-
-  c.execute(sorgu, params)
-  kitaplar = c.fetchall()
-
-  if kitaplar:
-    for k in kitaplar:
-      k_id, k_ad, k_yazar, k_kat, k_durum, k_emanet = k
-      with st.container():
-        st.markdown(f"### #{k_id} - {k_ad}")
-        st.write(f"**Yazar:** {k_yazar} | **Kategori:** {k_kat}")
-        if k_durum == "Emanette":
-          st.error(f"🔴 Emanette: {k_emanet}")
-        else:
-          st.success("🟢 Kütüphanede")
-        st.divider()
-  else:
-    st.info("Kayıtlı kitap bulunamadı.")
-
-# ==========================================
-# 3. SEKME: YENİ KİTAP EKLEME
-# ==========================================
-with tab_ekle:
-  st.subheader("Sisteme Yeni Kitap Ekle")
-  y_ad = st.text_input("Kitap Adı")
-  y_yazar = st.text_input("Yazar")
-  y_kat = st.text_input("Kategori")
-
-  if st.button("Kaydet"):
-    if y_ad and y_yazar:
-      c.execute(
-          "INSERT INTO kitaplar (ad, yazar, kategori) VALUES (?, ?, ?)",
-          (y_ad, y_yazar, y_kat),
-      )
-      conn.commit()
-      st.success(f"'{y_ad}' başarıyla eklendi!")
-      st.rerun()
-    else:
-      st.warning("Lütfen Kitap Adı ve Yazar alanlarını doldurun.")
-        
+      st.error("Bu ID'ye sahip bir kitap bulunamadı.")
+               

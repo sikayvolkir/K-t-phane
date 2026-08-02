@@ -20,20 +20,21 @@ st.markdown(
         font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     }
 
+    /* SEKMELER: HAKİ ARKA PLAN & KREM YAZI */
     .stTabs [data-baseweb="tab-list"] {
-        background-color: #E6E1D5;
+        background-color: #4A5335 !important;
         border-radius: 8px;
         padding: 4px;
     }
     
     .stTabs [data-baseweb="tab"] {
-        color: #4A5335;
+        color: #F5F2EB !important;
         font-weight: bold;
     }
 
     .stTabs [aria-selected="true"] {
-        background-color: #4A5335 !important;
-        color: #F5F2EB !important;
+        background-color: #353B26 !important;
+        color: #FFFFFF !important;
         border-radius: 6px;
     }
 
@@ -63,7 +64,6 @@ st.markdown(
         border-radius: 8px;
     }
 
-    /* Stat/Metrik Kutuları Şekillendirme */
     [data-testid="stMetricValue"] {
         color: #4A5335 !important;
         font-weight: bold;
@@ -73,11 +73,10 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# --- VERİTABANI BAĞLANTISI VE OTOMATİK SCHEMA ONARIMI ---
+# --- VERİTABANI BAĞLANTISI ---
 conn = sqlite3.connect("kutuphane.db", check_same_thread=False)
 c = conn.cursor()
 
-# Tabloları Oluştur
 c.execute("""
 CREATE TABLE IF NOT EXISTS kitaplar (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -128,26 +127,26 @@ if c.fetchone()[0] == 0:
 
 conn.commit()
 
-# --- BAŞLIK VE SAYI ÖZETLERİ (METRİKLER) ---
+# --- BAŞLIK VE SAYI ÖZETLERİ ---
 st.title("📚 Kütüphane Yönetim Sistemi")
 
-# Sayıları Veritabanından Çek
 c.execute("SELECT COUNT(*) FROM kitaplar")
 toplam_kitap = c.fetchone()[0]
 
 c.execute("SELECT COUNT(*) FROM kitaplar WHERE durum = 'Emanette'")
 emanette_kitap = c.fetchone()[0]
 
-# Üst Bilgi Kartları
 m_col1, m_col2 = st.columns(2)
 m_col1.metric(label="📖 Toplam Kitap Sayısı", value=toplam_kitap)
 m_col2.metric(label="🔴 Emanetteki Kitap Sayısı", value=emanette_kitap)
 
 st.divider()
 
-# Session State Hazırlığı
+# Session State Hazırlıkları
 if "yazar_input" not in st.session_state:
   st.session_state["yazar_input"] = ""
+if "kitap_adi_input" not in st.session_state:
+  st.session_state["kitap_adi_input"] = ""
 
 # --- SEKMELER ---
 tab_ekle, tab_liste, tab_emanet = st.tabs(
@@ -168,13 +167,12 @@ with tab_ekle:
   )
   mevcut_yazarlar = [row[0] for row in c.fetchall()]
 
-  y_ad = st.text_input("Kitap Adı:")
+  y_ad = st.text_input("Kitap Adı:", key="kitap_adi_input")
 
   # DİNAMİK YAZAR GİRİŞİ
   yazar_giris = st.text_input(
       "Yazar Adı Soyadı:",
-      value=st.session_state["yazar_input"],
-      key="yazar_text_field",
+      key="yazar_input",
       placeholder="Yazmaya başlayın (Örn: İsmet Özel)...",
   )
 
@@ -196,16 +194,18 @@ with tab_ekle:
 
   if st.button("Kitabı Kaydet", use_container_width=True):
     kaydedilecek_yazar = yazar_giris.strip()
-    if y_ad.strip() and kaydedilecek_yazar:
+    kaydedilecek_ad = y_ad.strip()
+
+    if kaydedilecek_ad and kaydedilecek_yazar:
       c.execute(
           "SELECT id FROM kitaplar WHERE LOWER(ad) = LOWER(?) AND LOWER(yazar)"
           " = LOWER(?)",
-          (y_ad.strip(), kaydedilecek_yazar),
+          (kaydedilecek_ad, kaydedilecek_yazar),
       )
       if c.fetchone():
         st.error(
-            f"⚠️ **Uyarı:** '{y_ad}' isimli kitap **{kaydedilecek_yazar}** yazarı"
-            " ile zaten kayıtlı!"
+            f"⚠️ **Uyarı:** '{kaydedilecek_ad}' isimli kitap"
+            f" **{kaydedilecek_yazar}** yazarı ile zaten kayıtlı!"
         )
       else:
         c.execute(
@@ -213,11 +213,18 @@ with tab_ekle:
                     INSERT INTO kitaplar (ad, yazar, kategori, okundu_durum) 
                     VALUES (?, ?, ?, 'Okunmadı')
                 """,
-            (y_ad.strip(), kaydedilecek_yazar, y_kat),
+            (kaydedilecek_ad, kaydedilecek_yazar, y_kat),
         )
         conn.commit()
-        st.session_state["yazar_input"] = ""  # Temizle
-        st.success(f"✅ '{y_ad}' başarıyla eklendi!")
+
+        # Ekranı temizle
+        st.session_state["kitap_adi_input"] = ""
+        st.session_state["yazar_input"] = ""
+
+        # Bildirim Göster ve Yenile
+        st.toast(
+            f"✅ '{kaydedilecek_ad}' kütüphaneye başarıyla eklendi!", icon="📚"
+        )
         st.rerun()
     else:
       st.warning("Lütfen Kitap Adı ve Yazar alanlarını doldurun.")
@@ -282,7 +289,6 @@ with tab_liste:
             st.success("🟢 Kütüphanede")
 
         with c_right:
-          # TIKLANABİLİR DURUM BUTONU
           is_okundu = k_okundu == "Okundu"
           btn_label = "✅ Okundu" if is_okundu else "📖 Okunmadı"
 
@@ -318,7 +324,7 @@ with tab_liste:
               "INSERT INTO kategoriler (ad) VALUES (?)", (yeni_tur.strip(),)
           )
           conn.commit()
-          st.success(f"'{yeni_tur}' türü eklendi!")
+          st.toast(f"'{yeni_tur}' türü eklendi!")
           st.rerun()
         except sqlite3.IntegrityError:
           st.warning("Bu tür zaten mevcut.")
@@ -333,7 +339,7 @@ with tab_liste:
       if st.button("Seçili Türü Sil"):
         c.execute("DELETE FROM kategoriler WHERE ad = ?", (silinecek_tur,))
         conn.commit()
-        st.success(f"'{silinecek_tur}' türü silindi!")
+        st.toast(f"'{silinecek_tur}' türü silindi!")
         st.rerun()
 
 # ==========================================
@@ -376,7 +382,7 @@ with tab_emanet:
               (kisi_adi.strip(), k_id),
           )
           conn.commit()
-          st.success(f"✅ '{ad}' kitabı **{kisi_adi}** kişisine verildi!")
+          st.toast(f"✅ '{ad}' kitabı **{kisi_adi}** kişisine verildi!")
           st.rerun()
 
       elif islem_tipi == "Emanetten Geri Al":
@@ -389,7 +395,7 @@ with tab_emanet:
               (k_id,),
           )
           conn.commit()
-          st.success(f"✅ '{ad}' kitabı kütüphaneye teslim alındı!")
+          st.toast(f"✅ '{ad}' kitabı kütüphaneye teslim alındı!")
           st.rerun()
     else:
       st.error("Bu ID'ye sahip bir kitap bulunamadı.")

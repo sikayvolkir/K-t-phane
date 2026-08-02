@@ -156,7 +156,7 @@ if c.fetchone()[0] == 0:
       ("Kişisel Gelişim",),
   ]
   c.executemany(
-      "INSERT INTO kategoriler (ad) VALUES (?)" , varsayilan_kategoriler
+      "INSERT INTO kategoriler (ad) VALUES (?)", varsayilan_kategoriler
   )
 
 conn.commit()
@@ -314,7 +314,6 @@ with tab_liste:
           " olarak işlenir."
       )
 
-      # Dinamik key ile resetlenebilen dosya yükleyici
       uploader_key = f"excel_file_{st.session_state['excel_uploader_key']}"
       uploaded_file = st.file_uploader(
           "Excel seçin",
@@ -445,10 +444,7 @@ with tab_liste:
 
                 conn.commit()
 
-                # İşlem bitince dosya yükleyiciyi sıfırla
                 st.session_state["excel_uploader_key"] += 1
-
-                # Bilgilendirme Toast ve Alert
                 st.success(f"🎉 İşlem Tamamlandı!\n- **{eklenen}** yeni kitap eklendi.\n- **{atlanan}** mükerrer kayıt atlandı.")
                 st.toast(f"✅ Aktarım tamamlandı! Toplam {eklenen} kitap eklendi.", icon="🎉")
                 st.rerun()
@@ -656,4 +652,10 @@ with tab_emanet:
           c.execute(
               "UPDATE kitaplar SET durum = 'Kütüphanede', emanet_alan = ''"
               " WHERE id = ?",
-         
+              (k_id,),
+          )
+          conn.commit()
+          st.toast(f"✅ '{ad}' kitabı kütüphaneye teslim alındı!")
+          st.rerun()
+    else:
+      st.error(

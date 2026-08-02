@@ -6,11 +6,11 @@ st.set_page_config(
     page_title="Kütüphane Yönetimi", page_icon="📚", layout="centered"
 )
 
-# --- VERİTABANI BAĞLANTISI VE TABLO YAPILANDIRMASI ---
+# --- VERİTABANI BAĞLANTISI ---
 conn = sqlite3.connect("kutuphane.db", check_same_thread=False)
 c = conn.cursor()
 
-# Kitaplar Tablosu
+# Tabloları Güvenli Oluştur (Veri Kaybını Önler)
 c.execute("""
 CREATE TABLE IF NOT EXISTS kitaplar (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -23,13 +23,20 @@ CREATE TABLE IF NOT EXISTS kitaplar (
 )
 """)
 
-# Kategoriler (Türler) Tablosu
 c.execute("""
 CREATE TABLE IF NOT EXISTS kategoriler (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ad TEXT UNIQUE NOT NULL
 )
 """)
+
+# Eksik Sütun Kontrolü (Silmeden Güvenli Güncelleme)
+try:
+  c.execute("SELECT okundu_durum FROM kitaplar LIMIT 1")
+except sqlite3.OperationalError:
+  c.execute(
+      "ALTER TABLE kitaplar ADD COLUMN okundu_durum TEXT DEFAULT 'Okunmadı'"
+  )
 
 # Varsayılan Türleri Ekle (Eğer boşsa)
 c.execute("SELECT COUNT(*) FROM kategoriler")
@@ -64,13 +71,14 @@ with tab_ekle:
   c.execute("SELECT ad FROM kategoriler ORDER BY ad ASC")
   kategori_listesi = [row[0] for row in c.fetchall()]
 
-  # Mevcut Yazarları Çek (Otomatik Kolaylık İçin)
-  c.execute("SELECT DISTINCT yazar FROM kitaplar WHERE yazar != '' ORDER BY yazar ASC")
+  # Mevcut Yazarları Çek
+  c.execute(
+      "SELECT DISTINCT yazar FROM kitaplar WHERE yazar != '' ORDER BY yazar ASC"
+  )
   mevcut_yazarlar = [row[0] for row in c.fetchall()]
 
   y_ad = st.text_input("Kitap Adı:")
 
-  # Yazar Otomatik Tamamlama / Seçim + Manuel Giriş
   y_yazar_secim = st.selectbox(
       "Önceki Yazarlardan Seç (İsteğe Bağlı):",
       ["-- Yeni Yazar Girin --"] + mevcut_yazarlar,
@@ -93,9 +101,7 @@ with tab_ekle:
           " = LOWER(?)",
           (y_ad.strip(), y_yazar.strip()),
       )
-      var_mi = c.fetchone()
-
-      if var_mi:
+      if c.fetchone():
         st.error(
             f"⚠️ **Uyarı:** '{y_ad}' isimli kitap **{y_yazar}** yazarı ile zaten"
             " kütüphanede kayıtlı!"
@@ -109,13 +115,13 @@ with tab_ekle:
             (y_ad.strip(), y_yazar.strip(), y_kat, y_okundu),
         )
         conn.commit()
-        st.success(f"✅ '{y_ad}' başarıyla kütüphaneye eklendi!")
+        st.success(f"✅ '{y_ad}' başarıyla eklendi!")
         st.rerun()
     else:
-      st.warning("Lütfen Kitap Adı ve Yazar alanlarını boş bırakmayın.")
+      st.warning("Lütfen Kitap Adı ve Yazar alanlarını doldurun.")
 
 # ==========================================
-# 2. SEKME: KİTAP LİSTESİ, FİLTRELER VE TÜR AYARLARI
+# 2. SEKME: KİTAP LİSTESİ, FİLTRELER VE DURUM GÜNCELLEME
 # ==========================================
 with tab_liste:
   st.subheader("📖 Kitap Envanteri")
@@ -126,14 +132,12 @@ with tab_liste:
     with col1:
       arama_metin = st.text_input("Kitap / Yazar Ara")
     with col2:
-      # Filtre için Türleri Çek
       c.execute("SELECT ad FROM kategoriler ORDER BY ad ASC")
       turler_filtre = ["Tümü"] + [row[0] for row in c.fetchall()]
       f_tur = st.selectbox("Tür Filtresi", turler_filtre)
 
     col3, col4 = st.columns(2)
     with col3:
-      # Filtre için Yazarları Çek
       c.execute("SELECT DISTINCT yazar FROM kitaplar ORDER BY yazar ASC")
       yazarlar_filtre = ["Tümü"] + [row[0] for row in c.fetchall()]
       f_yazar = st.selectbox("Yazar Filtresi", yazarlar_filtre)
@@ -169,29 +173,30 @@ with tab_liste:
     for k in kitaplar:
       k_id, k_ad, k_yazar, k_kat, k_durum, k_emanet, k_okundu = k
       with st.container():
-        c_left, c_right = st.columns([3, 1])
+        c_left, c_right = st.columns([2.5, 1.5])
         with c_left:
           st.markdown(f"### #{k_id} - {k_ad}")
-          st.write(
-              f"**Yazar:** {k_yazar} | **Tür:** {k_kat} | **Okunma:**"
-              f" {k_okundu}"
-          )
+          st.write(f"**Yazar:** {k_yazar} | **Tür:** {k_kat}")
           if k_durum == "Emanette":
             st.error(f"🔴 Emanette: {k_emanet}")
           else:
             st.success("🟢 Kütüphanede")
 
         with c_right:
-          # Okundu Durumu Hızlı Değiştirme
-          yeni_durum = "Okunmadı" if k_okundu == "Okundu" else "Okundu"
-          if st.button(
-              f"Mark: {yeni_durum}", key=f"btn_okundu_{k_id}"
-          ):
+          # Listeden Okundu / Okunmadı Seçimi
+          yeni_okundu_secim = st.selectbox(
+              "Okuma Durumu:",
+              ["Okunmadı", "Okundu"],
+              index=0 if k_okundu == "Okunmadı" else 1,
+              key=f"sel_okundu_{k_id}",
+          )
+          if yeni_okundu_secim != k_okundu:
             c.execute(
                 "UPDATE kitaplar SET okundu_durum = ? WHERE id = ?",
-                (yeni_durum, k_id),
+                (yeni_okundu_secim, k_id),
             )
             conn.commit()
+            st.toast(f"#{k_id} '{k_ad}' durumu güncellendi!")
             st.rerun()
         st.divider()
   else:
@@ -200,12 +205,9 @@ with tab_liste:
   # --- KİTAP TÜRLERİ (KATEGORİ) YÖNETİM AYARI ---
   st.write("---")
   with st.expander("⚙️ Kitap Türü (Kategori) Ayarları"):
-    st.write("**Mevcut Türleri Yönetin:**")
-
     c.execute("SELECT id, ad FROM kategoriler ORDER BY ad ASC")
     kategoriler = c.fetchall()
 
-    # Tür Ekleme
     yeni_tur = st.text_input("Yeni Tür Adı:")
     if st.button("Tür Ekle"):
       if yeni_tur.strip():
@@ -222,7 +224,6 @@ with tab_liste:
         st.warning("Lütfen bir tür adı girin.")
 
     st.write("---")
-    # Tür Silme
     if kategoriler:
       silinecek_tur = st.selectbox(
           "Silinecek Türü Seçin:", [k[1] for k in kategoriler]
@@ -293,4 +294,3 @@ with tab_emanet:
           st.rerun()
     else:
       st.error("Bu ID'ye sahip bir kitap bulunamadı.")
-               

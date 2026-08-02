@@ -142,11 +142,9 @@ m_col2.metric(label="🔴 Emanetteki Kitap Sayısı", value=emanette_kitap)
 
 st.divider()
 
-# Session State Hazırlıkları
-if "yazar_input" not in st.session_state:
-  st.session_state["yazar_input"] = ""
-if "kitap_adi_input" not in st.session_state:
-  st.session_state["kitap_adi_input"] = ""
+# Formu güvenli sıfırlama mekanizması (Form anahtarı sıfırlama)
+if "form_key" not in st.session_state:
+  st.session_state["form_key"] = 0
 
 # --- SEKMELER ---
 tab_ekle, tab_liste, tab_emanet = st.tabs(
@@ -167,12 +165,14 @@ with tab_ekle:
   )
   mevcut_yazarlar = [row[0] for row in c.fetchall()]
 
-  y_ad = st.text_input("Kitap Adı:", key="kitap_adi_input")
+  # Dinamik Key ile Form Elemanları (Sıfırlama için)
+  fk = st.session_state["form_key"]
 
-  # DİNAMİK YAZAR GİRİŞİ
+  y_ad = st.text_input("Kitap Adı:", key=f"kitap_adi_{fk}")
+
   yazar_giris = st.text_input(
       "Yazar Adı Soyadı:",
-      key="yazar_input",
+      key=f"yazar_adi_{fk}",
       placeholder="Yazmaya başlayın (Örn: İsmet Özel)...",
   )
 
@@ -187,7 +187,7 @@ with tab_ekle:
       cols = st.columns(min(len(tahminler), 3))
       for idx, t_yazar in enumerate(tahminler[:3]):
         if cols[idx % 3].button(t_yazar, key=f"tahmin_{idx}"):
-          st.session_state["yazar_input"] = t_yazar
+          st.session_state[f"yazar_adi_{fk}"] = t_yazar
           st.rerun()
 
   y_kat = st.selectbox("Kitap Türü (Kategori):", kategori_listesi)
@@ -217,11 +217,10 @@ with tab_ekle:
         )
         conn.commit()
 
-        # Ekranı temizle
-        st.session_state["kitap_adi_input"] = ""
-        st.session_state["yazar_input"] = ""
+        # Key değerini artırarak girdileri güvenle tamamen sıfırla
+        st.session_state["form_key"] += 1
 
-        # Bildirim Göster ve Yenile
+        # Bildirim göster ve sayfayı yenile
         st.toast(
             f"✅ '{kaydedilecek_ad}' kütüphaneye başarıyla eklendi!", icon="📚"
         )
@@ -399,4 +398,4 @@ with tab_emanet:
           st.rerun()
     else:
       st.error("Bu ID'ye sahip bir kitap bulunamadı.")
-        
+    

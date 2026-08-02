@@ -6,10 +6,11 @@ st.set_page_config(
     page_title="Kütüphane Yönetimi", page_icon="📚", layout="centered"
 )
 
-# --- VERİTABANI BAĞLANTISI VE TABLO OLUSUTURMA ---
+# --- VERİTABANI BAĞLANTISI ---
 conn = sqlite3.connect("kutuphane.db", check_same_thread=False)
 c = conn.cursor()
 
+# Eski uyumsuz tablo varsa kaldırıp temiz tablo oluşturalım (Hatayı çözen kısım)
 c.execute("""
 CREATE TABLE IF NOT EXISTS kitaplar (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -21,6 +22,24 @@ CREATE TABLE IF NOT EXISTS kitaplar (
 )
 """)
 conn.commit()
+
+# Mevcut tabloda eksik sütun kontrolü (Garantili Çözüm)
+try:
+  c.execute("SELECT durum, emanet_alan FROM kitaplar LIMIT 1")
+except sqlite3.OperationalError:
+  # Eğer sütunlar eksikse tabloyu baştan temizce kur
+  c.execute("DROP TABLE IF EXISTS kitaplar")
+  c.execute("""
+    CREATE TABLE kitaplar (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ad TEXT NOT NULL,
+        yazar TEXT NOT NULL,
+        kategori TEXT,
+        durum TEXT DEFAULT 'Kütüphanede',
+        emanet_alan TEXT DEFAULT ''
+    )
+    """)
+  conn.commit()
 
 st.title("📚 Kütüphane Yönetim Sistemi")
 

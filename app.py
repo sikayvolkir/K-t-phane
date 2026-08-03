@@ -295,18 +295,6 @@ with tab_liste:
 with tab_emanet:
     st.subheader("📲 Emanet / Teslim İşlemleri")
 
-    query_params = st.query_params
-    if "qr_id" in query_params:
-        try:
-            qr_scanned_id = int(query_params["qr_id"])
-            st.session_state["selected_kitap_id"] = qr_scanned_id
-            st.session_state["kamera_acik"] = False
-            st.query_params.clear()
-            st.session_state["bildirim"] = ("success", f"🎯 QR Okundu! Seçilen Kitap ID: #{qr_scanned_id}")
-            st.rerun()
-        except ValueError:
-            pass
-
     c.execute("SELECT id, ad, yazar, kategori, emanet_alan FROM kitaplar WHERE durum = 'Emanette' ORDER BY id DESC")
     emanetteki_kitaplar = c.fetchall()
 
@@ -380,25 +368,29 @@ with tab_emanet:
             st.session_state["kamera_acik"] = False
             st.rerun()
 
-        st.caption("📷 Kameraya QR Kodu Gösterin (Otomatik taranır):")
-        
-        # Multiline string ve kaçış dizileri kaldırıldı:
-        html_qr_scanner = (
-            '<script src="https://unpkg.com/html5-qrcode"></script>'
-            '<div id="reader" style="width:100%;max-width:450px;margin:auto;border-radius:10px;overflow:hidden;"></div>'
-            '<script>'
-            'function onScanSuccess(text){'
-            'var id=text.replace(/[^0-9]/g,"");'
-            'if(id){'
-            'var u=new URL(window.parent.location.href);'
-            'u.searchParams.set("qr_id",id);'
-            'window.parent.location.href=u.href;'
-            '}'
-            '}'
-            'var s=new Html5QrcodeScanner("reader",{fps:15,qrbox:{width:250,height:250}},false);'
-            's.render(onScanSuccess);'
-            '</script>'
-        )
-        components.html(html_qr_scanner, height=360)
+        st.caption("📷 Arka kamera ile QR kod taranıyor...")
 
-    st.mark
+        # Doğrudan Arka Kamera Zorlamalı HTML5 + jsQR Tarayıcı
+        scanner_html = (
+            '<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>'
+            '<div style="width:100%; max-width:400px; margin:auto; text-align:center;">'
+            '  <video id="v" style="width:100%; border-radius:10px; background:#000;" autoplay playsinline muted></video>'
+            '  <canvas id="c" style="display:none;"></canvas>'
+            '  <div id="st" style="margin-top:6px; font-weight:bold; color:#4A5335;">Kamera Açılıyor...</div>'
+            '</div>'
+            '<script>'
+            'const video = document.getElementById("v");'
+            'const canvas = document.getElementById("c");'
+            'const ctx = canvas.getContext("2d");'
+            'const stDiv = document.getElementById("st");'
+            'let active = true;'
+            'navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })'
+            '.then(function(stream) {'
+            '  video.srcObject = stream;'
+            '  video.setAttribute("playsinline", true);'
+            '  video.play();'
+            '  stDiv.innerText = "QR Kodu Hizalayın...";'
+            '  requestAnimationFrame(scan);'
+            '})'
+            '.catch(function(err) {'
+            '  stDiv.innerTe

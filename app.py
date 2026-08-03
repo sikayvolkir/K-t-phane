@@ -402,7 +402,8 @@ with tab_liste:
                     else:
                         st.success("🟢 Kütüphanede")
 
-                    is_okundu = (k_okundu == "Okundu")
+                    durum_okunma = str(k_okundu)
+                    is_okundu = bool(durum_okunma == "Okundu")
                     btn_label = "✅ Okundu (Okunmadı Yap)" if is_okundu else "📖 Okunmadı (Okundu Yap)"
 
                     if st.button(btn_label, key=f"btn_okundu_{k_id}", use_container_width=True):
@@ -511,17 +512,19 @@ with tab_emanet:
             st.warning("Lütfen işlem yapılacak bir kitap seçin.")
         else:
             c.execute(
-                "SELECT id, ad, yazar, kategori, durum, emanet_alan, okundu_durum FROM kitaplar WHERE id = ?",
+                "SELECT id, ad, yazar, durum, emanet_alan FROM kitaplar WHERE id = ?",
                 (secilen_kitap_id,),
             )
             kitap = c.fetchone()
 
-            if kitap:
-                k_id, ad, yazar, kat, durum, emanet_alan, okundu = kitap
+            if not kitap:
+                st.error(f"#{secilen_kitap_id} ID'li bir kitap bulunamadı.")
+            else:
+                k_id, ad, yazar, mevc_durum, mevc_emanet = kitap
 
                 if islem_tipi == "Emanet Ver":
-                    if durum == "Emanette":
-                        st.error(f"Bu kitap zaten **{emanet_alan}** isimli kişide!")
+                    if mevc_durum == "Emanette":
+                        st.error(f"Bu kitap zaten **{mevc_emanet}** isimli kişide!")
                     elif not kisi_adi.strip():
                         st.warning("Lütfen kitabı alacak kişinin adını girin.")
                     else:
@@ -530,8 +533,4 @@ with tab_emanet:
                             (kisi_adi.strip(), k_id),
                         )
                         conn.commit()
-                        st.toast(f"✅ '{ad}' kitabı **{kisi_adi}** kişisine verildi!")
-                        st.rerun()
-
-                elif islem_tipi == "Emanetten Geri Al":
-                    if durum =
+                        st.toast(f"✅ '{ad}' kitabı **{kisi_adi}** kişisine veri

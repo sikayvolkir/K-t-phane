@@ -86,7 +86,6 @@ if "kamera_acik" not in st.session_state: st.session_state["kamera_acik"] = Fals
 if "selected_kitap_id" not in st.session_state: st.session_state["selected_kitap_id"] = None
 if "bildirim" not in st.session_state: st.session_state["bildirim"] = None
 
-# Sayfa Yenilendiğinde Ekranda Kalıcı Bildirim Göster
 if st.session_state["bildirim"]:
     b_tip, b_mesaj = st.session_state["bildirim"]
     if b_tip == "success":
@@ -296,7 +295,6 @@ with tab_liste:
 with tab_emanet:
     st.subheader("📲 Emanet / Teslim İşlemleri")
 
-    # QR taranınca URL'den ID alma
     query_params = st.query_params
     if "qr_id" in query_params:
         try:
@@ -309,7 +307,6 @@ with tab_emanet:
         except ValueError:
             pass
 
-    # --- EMANETTEKİ KİTAPLAR ÖZETİ ---
     c.execute("SELECT id, ad, yazar, kategori, emanet_alan FROM kitaplar WHERE durum = 'Emanette' ORDER BY id DESC")
     emanetteki_kitaplar = c.fetchall()
 
@@ -368,14 +365,12 @@ with tab_emanet:
         else:
             st.info("Şu an emanette kitap bulunmuyor.")
 
-    # Manuel ID Seçeneği
     with st.expander("Manuel Kitap ID Gir"):
         manual_id_input = st.number_input("Kitap ID:", min_value=1, step=1, key=f"manual_id_{ek_key}")
         if st.button("Bu ID'yi Kullan", key=f"btn_manual_set_{ek_key}"):
             st.session_state["selected_kitap_id"] = int(manual_id_input)
             st.toast(f"🎯 ID #{manual_id_input} seçildi!")
 
-    # Canlı HTML5 QR Kamerası
     if not st.session_state["kamera_acik"]:
         if st.button("📷 Canlı QR Kamerasını Aç", use_container_width=True, key=f"btn_cam_open_{ek_key}"):
             st.session_state["kamera_acik"] = True
@@ -386,14 +381,65 @@ with tab_emanet:
             st.rerun()
 
         st.caption("📷 Kameraya QR Kodu Gösterin (Otomatik taranır):")
-        html_qr_scanner = r"""
-        <script src="https://unpkg.com/html5-qrcode"></script>
-        <div id="reader" style="width: 100%; max-width: 450px; margin: auto; border-radius: 10px; overflow: hidden;"></div>
-        <script>
-            function onScanSuccess(decodedText, decodedResult) {
-                let match = decodedText.match(/KITAP_ID:(\d+)/) || decodedText.match(/(\d+)/);
-                if (match) {
-                    let bookId = match[1];
-                    let currentUrl = new URL(window.parent.location.href);
-                    currentUrl.searchParams.set('qr_id', bookId);
-                    window.parent
+        
+        # Multiline string ve kaçış dizileri kaldırıldı:
+        html_qr_scanner = (
+            '<script src="https://unpkg.com/html5-qrcode"></script>'
+            '<div id="reader" style="width:100%;max-width:450px;margin:auto;border-radius:10px;overflow:hidden;"></div>'
+            '<script>'
+            'function onScanSuccess(text){'
+            'var id=text.replace(/[^0-9]/g,"");'
+            'if(id){'
+            'var u=new URL(window.parent.location.href);'
+            'u.searchParams.set("qr_id",id);'
+            'window.parent.location.href=u.href;'
+            '}'
+            '}'
+            'var s=new Html5QrcodeScanner("reader",{fps:15,qrbox:{width:250,height:250}},false);'
+            's.render(onScanSuccess);'
+            '</script>'
+        )
+        components.html(html_qr_scanner, height=360)
+
+    st.markdown("---")
+    kisi_adi = ""
+    if islem_tipi == "Emanet Ver":
+        kisi_adi = st.text_input("Emanet Edilecek Kişinin Adı Soyadı:", key=f"kisi_adi_{ek_key}")
+
+    if st.button("İşlemi Onayla ve Kaydet", use_container_width=True, key=f"btn_onayla_{ek_key}"):
+        target_id = st.session_state.get("selected_kitap_id")
+
+        if target_id is None:
+            st.session_state["bildirim"] = ("error", "Lütfen işlem yapılacak bir kitap seçin veya ID girin.")
+            st.rerun()
+        else:
+            c.execute("SELECT id, ad, yazar, durum, emanet_alan FROM kitaplar WHERE id = ?", (target_id,))
+            kitap = c.fetchone()
+
+            if not kitap:
+                st.session_state["bildirim"] = ("error", f"#{target_id} ID'li bir kitap veritabanında bulunamadı.")
+                st.rerun()
+            else:
+                k_id, ad, yazar, mevc_durum, mevc_emanet = kitap
+                if islem_tipi == "Emanet Ver":
+                    if mevc_durum == "Emanette":
+                        st.session_state["bildirim"] = ("error", f"⚠️ '{ad}' kitabı zaten '{mevc_emanet}' kişisinde emanette!")
+                        st.rerun()
+                    elif not kisi_adi.strip():
+                        st.warning("Lütfen emanet alacak kişinin adını girin.")
+                    else:
+                        c.execute("UPDATE kitaplar SET durum = 'Emanette', emanet_alan = ? WHERE id = ?", (kisi_adi.strip(), k_id))
+                        conn.commit()
+                        st.session_state["bildirim"] = ("success", f"✅ '{ad}' kitabı {kisi_adi.strip()} kişisine emanet edildi!")
+                        emanet_sifirla()
+                        st.rerun()
+                else:
+                    if mevc_durum == "Kütüphanede":
+                        st.session_state["bildirim"] = ("error", f"ℹ️ '{ad}' kitabı zaten kütüphanede bulunuyor.")
+                        st.rerun()
+                    else:
+                        c.execute("UPDATE kitaplar SET durum = 'Kütüphanede', emanet_alan = '' WHERE id = ?", (k_id,))
+                        conn.commit()
+                        st.session_state["bildirim"] = ("success", f"✅ '{ad}' kitabı kütüphaneye geri alındı!")
+                        emanet_sifirla()
+                        st.rerun()

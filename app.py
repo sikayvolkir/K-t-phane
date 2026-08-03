@@ -94,8 +94,7 @@ def get_db_connection():
 conn = get_db_connection()
 c = conn.cursor()
 
-c.execute(
-    """
+c.execute("""
 CREATE TABLE IF NOT EXISTS kitaplar (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ad TEXT NOT NULL,
@@ -105,34 +104,27 @@ CREATE TABLE IF NOT EXISTS kitaplar (
     emanet_alan TEXT DEFAULT '',
     okundu_durum TEXT DEFAULT 'Okunmadı'
 )
-"""
-)
+""")
 
-c.execute(
-    """
+c.execute("""
 CREATE TABLE IF NOT EXISTS kategoriler (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ad TEXT UNIQUE NOT NULL
 )
-"""
-)
+""")
 
-# Migrasyonlar (Eksik Sütun Kontrolü)
+# Migrasyonlar
 c.execute("PRAGMA table_info(kitaplar)")
 mevcut_sutunlar = [col[1] for col in c.fetchall()]
 
 if "kategori" not in mevcut_sutunlar:
     c.execute("ALTER TABLE kitaplar ADD COLUMN kategori TEXT DEFAULT 'Genel'")
 if "durum" not in mevcut_sutunlar:
-    c.execute(
-        "ALTER TABLE kitaplar ADD COLUMN durum TEXT DEFAULT 'Kütüphanede'"
-    )
+    c.execute("ALTER TABLE kitaplar ADD COLUMN durum TEXT DEFAULT 'Kütüphanede'")
 if "emanet_alan" not in mevcut_sutunlar:
     c.execute("ALTER TABLE kitaplar ADD COLUMN emanet_alan TEXT DEFAULT ''")
 if "okundu_durum" not in mevcut_sutunlar:
-    c.execute(
-        "ALTER TABLE kitaplar ADD COLUMN okundu_durum TEXT DEFAULT 'Okunmadı'"
-    )
+    c.execute("ALTER TABLE kitaplar ADD COLUMN okundu_durum TEXT DEFAULT 'Okunmadı'")
 
 conn.commit()
 
@@ -174,9 +166,7 @@ with tab_ekle:
     c.execute("SELECT ad FROM kategoriler ORDER BY ad ASC")
     kategori_listesi = [row[0] for row in c.fetchall()]
 
-    c.execute(
-        "SELECT DISTINCT yazar FROM kitaplar WHERE yazar != '' ORDER BY yazar ASC"
-    )
+    c.execute("SELECT DISTINCT yazar FROM kitaplar WHERE yazar != '' ORDER BY yazar ASC")
     mevcut_yazarlar = [row[0] for row in c.fetchall()]
 
     fk = st.session_state["form_key"]
@@ -193,9 +183,7 @@ with tab_ekle:
         arama_terim = yazar_giris.strip().lower()
         tahminler = [y for y in mevcut_yazarlar if arama_terim in y.lower()]
 
-        if tahminler and (
-            len(tahminler) > 1 or tahminler[0].lower() != arama_terim
-        ):
+        if tahminler and (len(tahminler) > 1 or tahminler[0].lower() != arama_terim):
             st.caption("💡 Otomatik Tahminler:")
             cols = st.columns(min(len(tahminler), 3))
             for idx, t_yazar in enumerate(tahminler[:3]):
@@ -203,10 +191,7 @@ with tab_ekle:
                     st.session_state[f"yazar_adi_{fk}"] = t_yazar
                     st.rerun()
 
-    y_kat = st.selectbox(
-        "Kitap Türü (Kategori):",
-        kategori_listesi if kategori_listesi else ["Genel"],
-    )
+    y_kat = st.selectbox("Kitap Türü (Kategori):", kategori_listesi if kategori_listesi else ["Genel"])
 
     if st.button("Kitabı Kaydet", use_container_width=True):
         kaydedilecek_yazar = yazar_giris.strip()
@@ -218,9 +203,7 @@ with tab_ekle:
                 (kaydedilecek_ad, kaydedilecek_yazar),
             )
             if c.fetchone():
-                st.error(
-                    f"⚠️ **Uyarı:** '{kaydedilecek_ad}' isimli kitap zaten kayıtlı!"
-                )
+                st.error(f"⚠️ **Uyarı:** '{kaydedilecek_ad}' isimli kitap zaten kayıtlı!")
             else:
                 c.execute(
                     """
@@ -244,7 +227,6 @@ with tab_liste:
 
     excel_col1, excel_col2 = st.columns(2)
 
-    # Dışa Aktarma
     try:
         c.execute(
             "SELECT kategori AS Kategori, ad AS Isim, yazar AS Yazar, durum AS Durum, "
@@ -258,14 +240,7 @@ with tab_liste:
     if tum_kitaplar_raw:
         df_export = pd.DataFrame(
             tum_kitaplar_raw,
-            columns=[
-                "Kategori",
-                "Isim",
-                "Yazar",
-                "Durum",
-                "Emanet Alan",
-                "Okunma Durumu",
-            ],
+            columns=["Kategori", "Isim", "Yazar", "Durum", "Emanet Alan", "Okunma Durumu"],
         )
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine="openpyxl") as writer:
@@ -280,11 +255,8 @@ with tab_liste:
             use_container_width=True,
         )
     else:
-        excel_col1.button(
-            "📤 Excel Dışa Aktar", disabled=True, use_container_width=True
-        )
+        excel_col1.button("📤 Excel Dışa Aktar", disabled=True, use_container_width=True)
 
-    # İÇE AKTARMA
     with excel_col2:
         show_import = st.popover("📥 Excel İçe Aktar", use_container_width=True)
         with show_import:
@@ -314,109 +286,51 @@ with tab_liste:
                             kat_idx, isim_idx, yazar_idx = 0, 1, 2
                             header_row = 0
 
-                            # Başlık Satırını Tespit Et
                             for r_idx in range(min(5, len(df_raw))):
-                                row_vals = [
-                                    str(val).strip().lower()
-                                    for val in df_raw.iloc[r_idx].values
-                                ]
+                                row_vals = [str(val).strip().lower() for val in df_raw.iloc[r_idx].values]
                                 for c_idx, val in enumerate(row_vals):
                                     if val in ["kategori", "tür", "tur"]:
                                         kat_idx = c_idx
-                                    elif val in [
-                                        "isim",
-                                        "kitap adı",
-                                        "kitap adi",
-                                        "ad",
-                                        "kitap",
-                                    ]:
+                                    elif val in ["isim", "kitap adı", "kitap adi", "ad", "kitap"]:
                                         isim_idx = c_idx
                                     elif val in ["yazar", "yazar adı", "author"]:
                                         yazar_idx = c_idx
 
-                                if (
-                                    "isim" in row_vals
-                                    or "kitap adı" in row_vals
-                                    or "ad" in row_vals
-                                ):
+                                if "isim" in row_vals or "kitap adı" in row_vals or "ad" in row_vals:
                                     header_row = r_idx + 1
                                     break
 
                             conn_imp = get_db_connection()
                             c_imp = conn_imp.cursor()
 
-                            c_imp.execute(
-                                "SELECT LOWER(ad), LOWER(yazar) FROM kitaplar"
-                            )
+                            c_imp.execute("SELECT LOWER(ad), LOWER(yazar) FROM kitaplar")
                             mevcut_set = set(c_imp.fetchall())
 
                             ekler = []
                             kategoriler_to_add = set()
                             atlanan = 0
 
-                            yasakli_kelimeler = [
-                                "isim",
-                                "kitap adı",
-                                "kitap adi",
-                                "ad",
-                                "title",
-                                "yazar",
-                                "kategori",
-                                "tür",
-                            ]
+                            yasakli_kelimeler = ["isim", "kitap adı", "kitap adi", "ad", "title", "yazar", "kategori", "tür"]
 
                             for r_i in range(header_row, len(df_raw)):
                                 row = df_raw.iloc[r_i]
-                                kategori = (
-                                    str(row[kat_idx]).strip()
-                                    if pd.notna(row[kat_idx])
-                                    else "Genel"
-                                )
-                                ad = (
-                                    str(row[isim_idx]).strip()
-                                    if pd.notna(row[isim_idx])
-                                    else ""
-                                )
-                                yazar = (
-                                    str(row[yazar_idx]).strip()
-                                    if pd.notna(row[yazar_idx])
-                                    else ""
-                                )
+                                kategori = str(row[kat_idx]).strip() if pd.notna(row[kat_idx]) else "Genel"
+                                ad = str(row[isim_idx]).strip() if pd.notna(row[isim_idx]) else ""
+                                yazar = str(row[yazar_idx]).strip() if pd.notna(row[yazar_idx]) else ""
 
-                                if (
-                                    ad.lower() in yasakli_kelimeler
-                                    and yazar.lower() in yasakli_kelimeler
-                                ):
+                                if ad.lower() in yasakli_kelimeler and yazar.lower() in yasakli_kelimeler:
                                     continue
 
-                                if (
-                                    ad
-                                    and yazar
-                                    and ad.lower() != "nan"
-                                    and yazar.lower() != "nan"
-                                ):
+                                if ad and yazar and ad.lower() != "nan" and yazar.lower() != "nan":
                                     if (ad.lower(), yazar.lower()) in mevcut_set:
                                         atlanan += 1
                                     else:
-                                        ekler.append((
-                                            ad,
-                                            yazar,
-                                            kategori,
-                                            "Kütüphanede",
-                                            "",
-                                            "Okunmadı",
-                                        ))
+                                        ekler.append((ad, yazar, kategori, "Kütüphanede", "", "Okunmadı"))
                                         kategoriler_to_add.add((kategori,))
-                                        mevcut_set.add((
-                                            ad.lower(),
-                                            yazar.lower(),
-                                        ))
+                                        mevcut_set.add((ad.lower(), yazar.lower()))
 
                             if kategoriler_to_add:
-                                c_imp.executemany(
-                                    "INSERT OR IGNORE INTO kategoriler (ad) VALUES (?)",
-                                    [(k,) for k in kategoriler_to_add],
-                                )
+                                c_imp.executemany("INSERT OR IGNORE INTO kategoriler (ad) VALUES (?)", [(k,) for k in kategoriler_to_add])
 
                             if ekler:
                                 c_imp.executemany(
@@ -427,9 +341,7 @@ with tab_liste:
                             conn_imp.commit()
                             conn_imp.close()
 
-                            st.success(
-                                f"🎉 İşlem bitti! {len(ekler)} kitap aktarıldı, {atlanan} mükerrer atlandı."
-                            )
+                            st.success(f"🎉 İşlem bitti! {len(ekler)} kitap aktarıldı, {atlanan} mükerrer atlandı.")
                             st.rerun()
                 except Exception as e:
                     st.error(f"Hata oluştu: {e}")
@@ -446,15 +358,11 @@ with tab_liste:
 
         col3, col4 = st.columns(2)
         with col3:
-            c.execute(
-                "SELECT DISTINCT yazar FROM kitaplar WHERE yazar != '' ORDER BY yazar ASC"
-            )
+            c.execute("SELECT DISTINCT yazar FROM kitaplar WHERE yazar != '' ORDER BY yazar ASC")
             yazarlar_filtre = ["Tümü"] + [row[0] for row in c.fetchall()]
             f_yazar = st.selectbox("Yazar Filtresi", yazarlar_filtre)
         with col4:
-            f_okundu = st.selectbox(
-                "Okunma Durumu", ["Tümü", "Okundu", "Okunmadı"]
-            )
+            f_okundu = st.selectbox("Okunma Durumu", ["Tümü", "Okundu", "Okunmadı"])
 
     sorgu = "SELECT id, ad, yazar, kategori, durum, emanet_alan, okundu_durum FROM kitaplar WHERE 1=1"
     params = []
@@ -495,20 +403,11 @@ with tab_liste:
                         st.success("🟢 Kütüphanede")
 
                     is_okundu = k_okundu == "Okundu"
-                    btn_label = (
-                        "✅ Okundu (Okunmadı Yap)"
-                        if is_okundu
-                        else "📖 Okunmadı (Okundu Yap)"
-                    )
+                    btn_label = "✅ Okundu (Okunmadı Yap)" if is_okundu else "📖 Okunmadı (Okundu Yap)"
 
-                    if st.button(
-                        btn_label, key=f"btn_okundu_{k_id}", use_container_width=True
-                    ):
+                    if st.button(btn_label, key=f"btn_okundu_{k_id}", use_container_width=True):
                         yeni_durum = "Okunmadı" if is_okundu else "Okundu"
-                        c.execute(
-                            "UPDATE kitaplar SET okundu_durum = ? WHERE id = ?",
-                            (yeni_durum, k_id),
-                        )
+                        c.execute("UPDATE kitaplar SET okundu_durum = ? WHERE id = ?", (yeni_durum, k_id))
                         conn.commit()
                         st.toast(f"#{k_id} güncellendi!")
                         st.rerun()
@@ -518,7 +417,6 @@ with tab_liste:
                     encoded_qr_data = urllib.parse.quote(qr_data)
                     qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=250x250&data={encoded_qr_data}"
                     st.image(qr_url, caption=f"ID: #{k_id}", width=150)
-
     else:
         st.info("Kriterlere uygun kitap bulunamadı.")
 
@@ -537,32 +435,21 @@ with tab_emanet:
     st.markdown("---")
 
     if islem_tipi == "Emanet Ver":
-        c.execute(
-            "SELECT id, ad, yazar FROM kitaplar WHERE durum = 'Kütüphanede' ORDER BY ad ASC"
-        )
+        c.execute("SELECT id, ad, yazar FROM kitaplar WHERE durum = 'Kütüphanede' ORDER BY ad ASC")
         uygun_kitaplar = c.fetchall()
     else:
-        c.execute(
-            "SELECT id, ad, emanet_alan FROM kitaplar WHERE durum = 'Emanette' ORDER BY ad ASC"
-        )
+        c.execute("SELECT id, ad, emanet_alan FROM kitaplar WHERE durum = 'Emanette' ORDER BY ad ASC")
         uygun_kitaplar = c.fetchall()
 
     secilen_kitap_id = None
 
     if uygun_kitaplar:
         if islem_tipi == "Emanet Ver":
-            options_dict = {
-                f"#{k[0]} - {k[1]} ({k[2]})": k[0] for k in uygun_kitaplar
-            }
+            options_dict = {f"#{k[0]} - {k[1]} ({k[2]})": k[0] for k in uygun_kitaplar}
         else:
-            options_dict = {
-                f"#{k[0]} - {k[1]} (Emanette: {k[2]})": k[0]
-                for k in uygun_kitaplar
-            }
+            options_dict = {f"#{k[0]} - {k[1]} (Emanette: {k[2]})": k[0] for k in uygun_kitaplar}
 
-        secilen_label = st.selectbox(
-            "Listeden Kitap Seçin:", list(options_dict.keys())
-        )
+        secilen_label = st.selectbox("Listeden Kitap Seçin:", list(options_dict.keys()))
         secilen_kitap_id = options_dict[secilen_label]
     else:
         if islem_tipi == "Emanet Ver":
@@ -575,4 +462,76 @@ with tab_emanet:
             "Kitap ID:",
             min_value=1,
             step=1,
-            value=in
+            value=int(st.session_state["scanned_id"]),
+            key="input_manual_id"
+        )
+        if st.button("Bu ID'yi Kullan"):
+            secilen_kitap_id = kitap_id_manual
+
+    # Kamera Tara Bloğu
+    if not st.session_state["kamera_acik"]:
+        if st.button("📷 QR Kamerasını Aç", use_container_width=True):
+            st.session_state["kamera_acik"] = True
+            st.rerun()
+    else:
+        if st.button("❌ Kamerayı Kapat", use_container_width=True):
+            st.session_state["kamera_acik"] = False
+            st.rerun()
+
+        kamera_foto = st.camera_input("QR Kodu Taramak İçin Fotoğraf Çekin")
+
+        if kamera_foto is not None:
+            bytes_data = kamera_foto.getvalue()
+            np_img = np.frombuffer(bytes_data, np.uint8)
+            img = cv2.imdecode(np_img, cv2.IMREAD_COLOR)
+
+            detector = cv2.QRCodeDetector()
+            decoded_info, points, _ = detector.detectAndDecode(img)
+
+            if decoded_info:
+                match = re.search(r"KITAP_ID:(\d+)", decoded_info)
+                if match:
+                    found_id = int(match.group(1))
+                    st.session_state["scanned_id"] = found_id
+                    secilen_kitap_id = found_id
+                    st.success(f"🎯 QR Kod Başarıyla Okundu! Seçilen Kitap ID: #{found_id}")
+                else:
+                    st.warning("QR Kod okundu fakat geçerli bir Kitap ID formatı içermiyor.")
+            else:
+                st.error("⚠️ Fotoğrafta QR Kod tespit edilemedi. Lütfen net bir fotoğraf çekin.")
+
+    st.markdown("---")
+
+    kisi_adi = ""
+    if islem_tipi == "Emanet Ver":
+        kisi_adi = st.text_input("Emanet Edilecek Kişinin Adı Soyadı:")
+
+    if st.button("İşlemi Onayla ve Kaydet", use_container_width=True):
+        if secilen_kitap_id is None:
+            st.warning("Lütfen işlem yapılacak bir kitap seçin.")
+        else:
+            c.execute(
+                "SELECT id, ad, yazar, kategori, durum, emanet_alan, okundu_durum FROM kitaplar WHERE id = ?",
+                (secilen_kitap_id,),
+            )
+            kitap = c.fetchone()
+
+            if kitap:
+                k_id, ad, yazar, kat, durum, emanet_alan, okundu = kitap
+
+                if islem_tipi == "Emanet Ver":
+                    if durum == "Emanette":
+                        st.error(f"Bu kitap zaten **{emanet_alan}** isimli kişide!")
+                    elif not kisi_adi.strip():
+                        st.warning("Lütfen kitabı alacak kişinin adını girin.")
+                    else:
+                        c.execute(
+                            "UPDATE kitaplar SET durum = 'Emanette', emanet_alan = ? WHERE id = ?",
+                            (kisi_adi.strip(), k_id),
+                        )
+                        conn.commit()
+                        st.toast(f"✅ '{ad}' kitabı **{kisi_adi}** kişisine verildi!")
+                        st.rerun()
+
+                elif islem_tipi == "Emanetten Geri Al":
+                    if durum == 

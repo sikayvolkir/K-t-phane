@@ -402,7 +402,7 @@ with tab_liste:
                     else:
                         st.success("🟢 Kütüphanede")
 
-                    is_okundu = k_okundu == "Okundu"
+                    is_okundu = (k_okundu == "Okundu")
                     btn_label = "✅ Okundu (Okunmadı Yap)" if is_okundu else "📖 Okunmadı (Okundu Yap)"
 
                     if st.button(btn_label, key=f"btn_okundu_{k_id}", use_container_width=True):
@@ -534,4 +534,4 @@ with tab_emanet:
                         st.rerun()
 
                 elif islem_tipi == "Emanetten Geri Al":
-                    if durum == 
+                    if durum =

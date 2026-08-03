@@ -4,7 +4,6 @@ import urllib.parse
 import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
-from streamlit_js_eval import streamlit_js_eval
 
 st.set_page_config(page_title="Kütüphane Yönetimi", page_icon="📚", layout="centered")
 
@@ -296,17 +295,14 @@ with tab_liste:
 with tab_emanet:
     st.subheader("📲 Emanet / Teslim İşlemleri")
 
-    # JavaScript Tarafından Gönderilen QR Verisini Dinle
-    scanned_id_from_js = streamlit_js_eval(js_expressions="window.sessionStorage.getItem('last_scanned_id')", key="get_storage_qr")
-
-    if scanned_id_from_js:
+    query_params = st.query_params
+    if "qr_id" in query_params:
         try:
-            parsed_id = int(scanned_id_from_js)
-            st.session_state["selected_kitap_id"] = parsed_id
+            qr_scanned_id = int(query_params["qr_id"])
+            st.session_state["selected_kitap_id"] = qr_scanned_id
             st.session_state["kamera_acik"] = False
-            # Değer işlendikten sonra temizle
-            streamlit_js_eval(js_expressions="window.sessionStorage.removeItem('last_scanned_id')", key="clear_storage_qr")
-            st.session_state["bildirim"] = ("success", f"🎯 QR Okundu! Seçilen Kitap ID: #{parsed_id}")
+            st.query_params.clear()
+            st.session_state["bildirim"] = ("success", f"🎯 QR Okundu! Seçilen Kitap ID: #{qr_scanned_id}")
             st.rerun()
         except ValueError:
             pass
@@ -384,12 +380,25 @@ with tab_emanet:
             st.session_state["kamera_acik"] = False
             st.rerun()
 
-        st.caption("📷 Arka kamera ile QR kod taranıyor...")
+        st.caption("📷 Kameraya QR Kodu Gösterin (Otomatik taranır):")
         
-        # Doğrudan Arka Kamerayı Zorlayan JSQR Altyapısı
+        # Multiline string ve kaçış dizileri kaldırıldı:
         html_qr_scanner = (
-            '<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>'
-            '<div style="width:100%; max-width:400px; margin:auto; text-align:center;">'
-            '  <video id="qr-video" style="width:100%; border-radius:12px; background:#000;" autoplay playsinline muted></video>'
-            '  <canvas id="qr-canvas" style="display:none;"></canvas>'
-            '  <div id="qr-status" style="margin-top:8px; 
+            '<script src="https://unpkg.com/html5-qrcode"></script>'
+            '<div id="reader" style="width:100%;max-width:450px;margin:auto;border-radius:10px;overflow:hidden;"></div>'
+            '<script>'
+            'function onScanSuccess(text){'
+            'var id=text.replace(/[^0-9]/g,"");'
+            'if(id){'
+            'var u=new URL(window.parent.location.href);'
+            'u.searchParams.set("qr_id",id);'
+            'window.parent.location.href=u.href;'
+            '}'
+            '}'
+            'var s=new Html5QrcodeScanner("reader",{fps:15,qrbox:{width:250,height:250}},false);'
+            's.render(onScanSuccess);'
+            '</script>'
+        )
+        components.html(html_qr_scanner, height=360)
+
+    st.mark

@@ -4,4 +4,4 @@ pillow
 opencv-python-headless
 openpyxl
 numpy
-
+streamlit-js-eval

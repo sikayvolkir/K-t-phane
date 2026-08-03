@@ -1,3 +1,4 @@
+
 import io
 import sqlite3
 import urllib.parse
@@ -370,27 +371,106 @@ with tab_emanet:
 
         st.caption("📷 Arka kamera ile QR kod taranıyor...")
 
-        # Doğrudan Arka Kamera Zorlamalı HTML5 + jsQR Tarayıcı
-        scanner_html = (
-            '<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>'
-            '<div style="width:100%; max-width:400px; margin:auto; text-align:center;">'
-            '  <video id="v" style="width:100%; border-radius:10px; background:#000;" autoplay playsinline muted></video>'
-            '  <canvas id="c" style="display:none;"></canvas>'
-            '  <div id="st" style="margin-top:6px; font-weight:bold; color:#4A5335;">Kamera Açılıyor...</div>'
-            '</div>'
-            '<script>'
-            'const video = document.getElementById("v");'
-            'const canvas = document.getElementById("c");'
-            'const ctx = canvas.getContext("2d");'
-            'const stDiv = document.getElementById("st");'
-            'let active = true;'
-            'navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })'
-            '.then(function(stream) {'
-            '  video.srcObject = stream;'
-            '  video.setAttribute("playsinline", true);'
-            '  video.play();'
-            '  stDiv.innerText = "QR Kodu Hizalayın...";'
-            '  requestAnimationFrame(scan);'
-            '})'
-            '.catch(function(err) {'
-            '  stDiv.innerTe
+        # Raw multi-line string kullanarak tırnak dizimi hatasını sıfırlıyoruz
+        scanner_html = r"""
+        <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+        <div style="width:100%; max-width:400px; margin:auto; text-align:center;">
+          <video id="v" style="width:100%; border-radius:10px; background:#000;" autoplay playsinline muted></video>
+          <canvas id="c" style="display:none;"></canvas>
+          <div id="st" style="margin-top:6px; font-weight:bold; color:#4A5335;">Kamera Açılıyor...</div>
+        </div>
+        <script>
+        const video = document.getElementById("v");
+        const canvas = document.getElementById("c");
+        const ctx = canvas.getContext("2d");
+        const stDiv = document.getElementById("st");
+        let active = true;
+
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+        .then(function(stream) {
+          video.srcObject = stream;
+          video.setAttribute("playsinline", true);
+          video.play();
+          stDiv.innerText = "QR Kodu Hizalayın...";
+          requestAnimationFrame(scan);
+        })
+        .catch(function(err) {
+          stDiv.innerText = "Kamera Başlatılamadı!";
+        });
+
+        function scan() {
+          if (!active) return;
+          if (video.readyState === video.HAVE_ENOUGH_DATA) {
+            canvas.height = video.videoHeight;
+            canvas.width = video.videoWidth;
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            var imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            var code = jsQR(imgData.data, imgData.width, imgData.height, { inversionAttempts: "dontInvert" });
+            if (code && code.data) {
+              var digits = code.data.replace(/[^0-9]/g, "");
+              if (digits) {
+                active = false;
+                stDiv.innerText = "Okundu: ID #" + digits;
+                window.parent.postMessage({type: "streamlit:setComponentValue", value: digits}, "*");
+              }
+            }
+          }
+          if (active) { requestAnimationFrame(scan); }
+        }
+        </script>
+        """
+        
+        scanned_val = components.html(scanner_html, height=340)
+        
+        if scanned_val is not None:
+            try:
+                parsed_id = int(str(scanned_val).strip())
+                st.session_state["selected_kitap_id"] = parsed_id
+                st.session_state["kamera_acik"] = False
+                st.session_state["bildirim"] = ("success", f"🎯 QR Okundu! Seçilen Kitap ID: #{parsed_id}")
+                st.rerun()
+            except ValueError:
+                pass
+
+    st.markdown("---")
+    kisi_adi = ""
+    if islem_tipi == "Emanet Ver":
+        kisi_adi = st.text_input("Emanet Edilecek Kişinin Adı Soyadı:", key=f"kisi_adi_{ek_key}")
+
+    if st.button("İşlemi Onayla ve Kaydet", use_container_width=True, key=f"btn_onayla_{ek_key}"):
+        target_id = st.session_state.get("selected_kitap_id")
+
+        if target_id is None:
+            st.session_state["bildirim"] = ("error", "Lütfen işlem yapılacak bir kitap seçin veya ID girin.")
+            st.rerun()
+        else:
+            c.execute("SELECT id, ad, yazar, durum, emanet_alan FROM kitaplar WHERE id = ?", (target_id,))
+            kitap = c.fetchone()
+
+            if not kitap:
+                st.session_state["bildirim"] = ("error", f"#{target_id} ID'li bir kitap veritabanında bulunamadı.")
+                st.rerun()
+            else:
+                k_id, ad, yazar, mevc_durum, mevc_emanet = kitap
+                if islem_tipi == "Emanet Ver":
+                    if mevc_durum == "Emanette":
+                        st.session_state["bildirim"] = ("error", f"⚠️ '{ad}' kitabı zaten '{mevc_emanet}' kişisinde emanette!")
+                        st.rerun()
+                    elif not kisi_adi.strip():
+                        st.warning("Lütfen emanet alacak kişinin adını girin.")
+                    else:
+                        c.execute("UPDATE kitaplar SET durum = 'Emanette', emanet_alan = ? WHERE id = ?", (kisi_adi.strip(), k_id))
+                        conn.commit()
+                        st.session_state["bildirim"] = ("success", f"✅ '{ad}' kitabı {kisi_adi.strip()} kişisine emanet edildi!")
+                        emanet_sifirla()
+                        st.rerun()
+                else:
+                    if mevc_durum == "Kütüphanede":
+                        st.session_state["bildirim"] = ("error", f"ℹ️ '{ad}' kitabı zaten kütüphanede bulunuyor.")
+                        st.rerun()
+                    else:
+                        c.execute("UPDATE kitaplar SET durum = 'Kütüphanede', emanet_alan = '' WHERE id = ?", (k_id,))
+                        conn.commit()
+                        st.session_state["bildirim"] = ("success", f"✅ '{ad}' kitabı kütüphaneye geri alındı!")
+                        emanet_sifirla()
+                        st.rerun()

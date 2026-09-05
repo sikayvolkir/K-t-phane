@@ -5,25 +5,25 @@ import pandas as pd
 # ---------------------------------------------------------
 # 1. VERİTABANI BAĞLANTISI VE TABLO OLUŞTURMA
 # ---------------------------------------------------------
+DB_FILE = "kutuphane.db"
+
 def get_connection():
-    conn = sqlite3.connect("kutuphane.db")
-    return conn
+    return sqlite3.connect(DB_FILE)
 
 def init_sqlite_db():
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS kitaplar (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            baslik TEXT NOT NULL,
-            yazar TEXT NOT NULL,
-            isbn TEXT,
-            durum TEXT DEFAULT 'Kütüphanede',
-            odunc_alan TEXT
-        )
-    """)
-    conn.commit()
-    conn.close()
+    with get_connection() as conn:
+        c = conn.cursor()
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS kitaplar (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                baslik TEXT NOT NULL,
+                yazar TEXT NOT NULL,
+                isbn TEXT,
+                durum TEXT DEFAULT 'Kütüphanede',
+                odunc_alan TEXT
+            )
+        """)
+        conn.commit()
 
 init_sqlite_db()
 
@@ -48,7 +48,6 @@ if "qr_scanned_id" in st.query_params:
         st.toast(f"🎯 QR Kod Okundu! Seçilen Kitap ID: #{scanned_id}", icon="✅")
     except ValueError:
         pass
-    # URL'deki parametreyi temizle (sayfa yenilendiğinde tekrar çalışmasın)
     st.query_params.clear()
 
 st.title("📚 Kütüphane Otomasyon Sistemi")
@@ -61,9 +60,17 @@ tab1, tab2, tab3 = st.tabs(["📖 Kitap Listesi", "➕ Yeni Kitap Ekle", "🔄 E
 # --- TAB 1: KİTAP LİSTESİ ---
 with tab1:
     st.subheader("Kütüphanedeki Tüm Kitaplar")
+    
     conn = get_connection()
-    df = pd.read_sql_query("SELECT id AS 'ID', baslik AS 'Kitap Adı', yazar AS 'Yazar', isbn AS 'ISBN', durum AS 'Durum', odunc_alan AS 'Ödünç Alan' FROM kitaplar", conn)
-    conn.close()
+    try:
+        # Tırnak işaretleri SQLite standartlarına uygun çift tırnak (") ile güncellendi
+        query = 'SELECT id AS "ID", baslik AS "Kitap Adı", yazar AS "Yazar", isbn AS "ISBN", durum AS "Durum", odunc_alan AS "Ödünç Alan" FROM kitaplar'
+        df = pd.read_sql_query(query, conn)
+    except Exception as e:
+        df = pd.DataFrame()
+        st.error(f"Veri okunurken hata oluştu: {e}")
+    finally:
+        conn.close()
     
     if not df.empty:
         st.dataframe(df, use_container_width=True)
@@ -82,11 +89,13 @@ with tab2:
         
         if submit_button:
             if baslik.strip() and yazar.strip():
-                conn = get_connection()
-                c = conn.cursor()
-                c.execute("INSERT INTO kitaplar (baslik, yazar, isbn) VALUES (?, ?, ?)", (baslik.strip(), yazar.strip(), isbn.strip()))
-                conn.commit()
-                conn.close()
+                with get_connection() as conn:
+                    c = conn.cursor()
+                    c.execute(
+                        "INSERT INTO kitaplar (baslik, yazar, isbn) VALUES (?, ?, ?)",
+                        (baslik.strip(), yazar.strip(), isbn.strip())
+                    )
+                    conn.commit()
                 st.success(f"'{baslik}' kitabı başarıyla kütüphaneye eklendi!")
                 st.rerun()
             else:
@@ -96,19 +105,15 @@ with tab2:
 with tab3:
     st.subheader("Kitap Ödünç / İade İşlemleri")
 
-    # Tüm kitap ID ve başlıklarını seçim kutusu için çek
     conn = get_connection()
     kitaplar_listesi = pd.read_sql_query("SELECT id, baslik, durum FROM kitaplar", conn)
     conn.close()
 
-    kitap_dict = {}
     options = []
-    for index, row in kitaplar_listesi.iterrows():
+    for _, row in kitaplar_listesi.iterrows():
         label = f"#{row['id']} - {row['baslik']} ({row['durum']})"
         options.append(label)
-        kitap_dict[row['id']] = label
 
-    # Seçili kitap varsa varsayılan indeksi ayarla
     selected_index = 0
     if st.session_state["selected_kitap_id"] is not None:
         target_id = st.session_state["selected_kitap_id"]
@@ -122,10 +127,10 @@ with tab3:
         seçilen_label = st.selectbox(
             "İşlem Yapılacak Kitabı Seçin",
             options=options if options else ["Kayıtlı Kitap Yok"],
-            index=selected_index if options else 0
+            index=selected_index if options and selected_index < len(options) else 0
         )
     with c2:
-        st.write("") # Hizalama boşluğu
+        st.write("")
         st.write("")
         if st.button("📷 QR / Kamera Aç", use_container_width=True):
             st.session_state["kamera_acik"] = not st.session_state["kamera_acik"]
@@ -228,14 +233,13 @@ with tab3:
         st.components.v1.html(scanner_html, height=360)
 
     # İŞLEM FORMU (ÖDÜNÇ / İADE)
-    if not kitaplar_listesi.empty:
+    if not kitaplar_listesi.empty and seçilen_label != "Kayıtlı Kitap Yok":
         selected_id = int(seçilen_label.split(" - ")[0].replace("#", ""))
         
-        conn = get_connection()
-        c = conn.cursor()
-        c.execute("SELECT baslik, yazar, durum, odunc_alan FROM kitaplar WHERE id = ?", (selected_id,))
-        secili_kitap = c.fetchone()
-        conn.close()
+        with get_connection() as conn:
+            c = conn.cursor()
+            c.execute("SELECT baslik, yazar, durum, odunc_alan FROM kitaplar WHERE id = ?", (selected_id,))
+            secili_kitap = c.fetchone()
 
         if secili_kitap:
             st.divider()
@@ -245,23 +249,22 @@ with tab3:
             if secili_kitap[2] == "Ödünç Verildi":
                 st.info(f"Bu kitap şu anda **{secili_kitap[3]}** isimli kişide.")
                 if st.button("📥 Kitabı İade Al"):
-                    conn = get_connection()
-                    c = conn.cursor()
-                    c.execute("UPDATE kitaplar SET durum = 'Kütüphanede', odunc_alan = NULL WHERE id = ?", (selected_id,))
-                    conn.commit()
-                    conn.close()
+                    with get_connection() as conn:
+                        c = conn.cursor()
+                        c.execute("UPDATE kitaplar SET durum = 'Kütüphanede', odunc_alan = NULL WHERE id = ?", (selected_id,))
+                        conn.commit()
                     st.success("Kitap başarıyla iade alındı!")
                     st.rerun()
             else:
                 odunc_alan_kisi = st.text_input("Kitabı Ödünç Alan Kişinin Adı Soyadı")
                 if st.button("📤 Ödünç Ver"):
                     if odunc_alan_kisi.strip():
-                        conn = get_connection()
-                        c = conn.cursor()
-                        c.execute("UPDATE kitaplar SET durum = 'Ödünç Verildi', odunc_alan = ? WHERE id = ?", (odunc_alan_kisi.strip(), selected_id))
-                        conn.commit()
-                        conn.close()
+                        with get_connection() as conn:
+                            c = conn.cursor()
+                            c.execute("UPDATE kitaplar SET durum = 'Ödünç Verildi', odunc_alan = ? WHERE id = ?", (odunc_alan_kisi.strip(), selected_id))
+                            conn.commit()
                         st.success(f"Kitap {odunc_alan_kisi} kişisine ödünç verildi!")
                         st.rerun()
                     else:
                         st.warning("Lütfen ödünç alan kişinin adını girin.")
+                        

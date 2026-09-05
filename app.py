@@ -227,7 +227,6 @@ with tab_liste:
             f_yazar = st.selectbox("Yazar Filtresi", yazarlar_filtre)
         with col4: f_okundu = st.selectbox("Okunma Durumu", ["Tümü", "Okundu", "Okunmadı"])
 
-    # Supabase Filtreli Sorgu
     query = supabase.table("kitaplar").select("id, ad, yazar, kategori, durum, emanet_alan, okundu_durum")
     if f_tur != "Tümü": query = query.eq("kategori", f_tur)
     if f_yazar != "Tümü": query = query.eq("yazar", f_yazar)
@@ -353,32 +352,26 @@ with tab_emanet:
 
         st.caption("📷 Arka kamera ile QR kod taranıyor...")
 
-        scanner_html = r"""
-        <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
-        <div style="width:100%; max-width:400px; margin:auto; text-align:center;">
-          <video id="v" style="width:100%; border-radius:10px; background:#000;" autoplay playsinline muted></video>
-          <canvas id="c" style="display:none;"></canvas>
-          <div id="st" style="margin-top:6px; font-weight:bold; color:#4A5335;">Kamera Açılıyor...</div>
-        </div>
-        <script>
-        const video = document.getElementById("v");
-        const canvas = document.getElementById("c");
-        const ctx = canvas.getContext("2d");
-        const stDiv = document.getElementById("st");
-        let active = true;
-
-        navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
-        .then(function(stream) {
-          video.srcObject = stream;
-          video.setAttribute("playsinline", true);
-          video.play();
-          stDiv.innerText = "QR Kodu Hizalayın...";
-          requestAnimationFrame(scan);
-        })
-        .catch(function(err) {
-          stDiv.innerText = "Kamera Başlatılamadı!";
-        });
-
-        function scan() {
-          if (!active) return;
-          if (video.readySta
+        scanner_html = (
+            'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js\n'
+            '<div style="width:100%; max-width:400px; margin:auto; text-align:center;">\n'
+            '  <video id="v" style="width:100%; border-radius:10px; background:#000;" autoplay playsinline muted></video>\n'
+            '  <canvas id="c" style="display:none;"></canvas>\n'
+            '  <div id="st" style="margin-top:6px; font-weight:bold; color:#4A5335;">Kamera Açılıyor...</div>\n'
+            '</div>\n'
+            '<script>\n'
+            'const video = document.getElementById("v");\n'
+            'const canvas = document.getElementById("c");\n'
+            'const ctx = canvas.getContext("2d");\n'
+            'const stDiv = document.getElementById("st");\n'
+            'let active = true;\n'
+            'navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })\n'
+            '.then(function(stream) {\n'
+            '  video.srcObject = stream;\n'
+            '  video.setAttribute("playsinline", true);\n'
+            '  video.play();\n'
+            '  stDiv.innerText = "QR Kodu Hizalayın...";\n'
+            '  requestAnimationFrame(scan);\n'
+            '})\n'
+            '.catch(function(err) {\n'
+            '  stDiv.innerText = "Kamera 

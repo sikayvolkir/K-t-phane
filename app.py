@@ -40,6 +40,7 @@ except Exception as e:
 if "form_key" not in st.session_state: st.session_state["form_key"] = 0
 if "emanet_key" not in st.session_state: st.session_state["emanet_key"] = 0
 if "selected_kitap_id" not in st.session_state: st.session_state["selected_kitap_id"] = None
+if "selected_kat_filter" not in st.session_state: st.session_state["selected_kat_filter"] = "Tümü"
 if "bildirim" not in st.session_state: st.session_state["bildirim"] = None
 
 if st.session_state["bildirim"]:
@@ -65,7 +66,7 @@ try:
     
     res_emanet = supabase.table("kitaplar").select("id", count="exact").eq("durum", "Emanette").execute()
     emanette_kitap = res_emanet.count if res_emanet.count is not None else 0
-except Exception as err:
+except Exception:
     toplam_kitap = 0
     emanette_kitap = 0
 
@@ -75,7 +76,12 @@ m_col2.metric(label="🔴 Emanetteki Kitap Sayısı", value=emanette_kitap)
 
 st.divider()
 
-tab_ekle, tab_liste, tab_emanet = st.tabs(["➕ Yeni Kitap Ekle", "📖 Kitap Listesi & Filtreler", "📲 Emanet İşlemleri"])
+tab_ekle, tab_liste, tab_emanet, tab_turler = st.tabs([
+    "➕ Yeni Kitap Ekle", 
+    "📖 Kitap Listesi", 
+    "📲 Emanet İşlemleri", 
+    "⚙️ Tür (Kategori) Ayarları"
+])
 
 # --- 1. SEKME: YENİ KİTAP EKLE ---
 with tab_ekle:
@@ -139,8 +145,9 @@ with tab_ekle:
 # --- 2. SEKME: KİTAP LİSTESİ ---
 with tab_liste:
     st.subheader("📖 Kitap Envanteri")
+    
+    # Excel Dışa/İçe Aktar Butonları
     excel_col1, excel_col2 = st.columns(2)
-
     try:
         res_exp = supabase.table("kitaplar").select("kategori, ad, yazar, durum, emanet_alan, okundu_durum").order("id", desc=True).execute()
         tum_kitaplar_raw = res_exp.data if res_exp.data else []
@@ -224,31 +231,61 @@ with tab_liste:
                 except Exception as e:
                     st.error(f"İçe Aktarma Hatası: {e}")
 
-    with st.expander("🔍 Detaylı Filtreleme ve Arama", expanded=False):
-        col1, col2 = st.columns(2)
-        with col1: arama_metin = st.text_input("Kitap / Yazar Ara")
-        with col2:
-            try:
-                res_tur = supabase.table("kategoriler").select("ad").order("ad").execute()
-                turler_filtre = ["Tümü"] + ([row["ad"] for row in res_tur.data] if res_tur.data else [])
-            except Exception:
-                turler_filtre = ["Tümü"]
-            f_tur = st.selectbox("Tür Filtresi", turler_filtre)
-            
-        col3, col4 = st.columns(2)
-        with col3:
-            try:
-                res_yaz = supabase.table("kitaplar").select("yazar").neq("yazar", "").execute()
-                yazarlar_filtre = ["Tümü"] + sorted(list(set([row["yazar"] for row in res_yaz.data]))) if res_yaz.data else ["Tümü"]
-            except Exception:
-                yazarlar_filtre = ["Tümü"]
-            f_yazar = st.selectbox("Yazar Filtresi", yazarlar_filtre)
-        with col4: f_okundu = st.selectbox("Okunma Durumu", ["Tümü", "Okundu", "Okunmadı"])
+    st.markdown("---")
 
+    # --- TÜR (KATEGORİ) BUTONLARI VE SAYILARI ---
+    try:
+        res_all_books = supabase.table("kitaplar").select("kategori").execute()
+        all_books_kat = [r["kategori"] for r in res_all_books.data if r.get("kategori")] if res_all_books.data else []
+    except Exception:
+        all_books_kat = []
+
+    try:
+        res_db_kats = supabase.table("kategoriler").select("ad").order("ad").execute()
+        db_kats = [r["ad"] for r in res_db_kats.data] if res_db_kats.data else []
+    except Exception:
+        db_kats = []
+
+    # Kategorilerin kitap sayılarını hesaplayalım
+    kat_counts = {}
+    for k in all_books_kat:
+        kat_counts[k] = kat_counts.get(k, 0) + 1
+
+    st.write("📂 **Türlere Göre Filtrele (Kitap Sayısı):**")
+    
+    # Tüm türler listesi (Veritabanındaki + varsa Kitaplardaki ek türler)
+    tum_turler_listesi = sorted(list(set(db_kats + list(kat_counts.keys()))))
+    
+    # Butonları yatay dizmek için kolonlar
+    t_cols = st.columns(min(len(tum_turler_listesi) + 1, 4))
+    
+    # "Tümü" Butonu
+    tumu_count = len(all_books_kat)
+    btn_tumu_label = f"🌐 Tümü ({tumu_count})"
+    if t_cols[0].button(btn_tumu_label, use_container_width=True):
+        st.session_state["selected_kat_filter"] = "Tümü"
+        st.rerun()
+
+    # Diğer Tür Butonları
+    for idx, t_ad in enumerate(tum_turler_listesi):
+        c_idx = (idx + 1) % 4
+        c_count = kat_counts.get(t_ad, 0)
+        btn_label = f"📁 {t_ad} ({c_count})"
+        if t_cols[c_idx].button(btn_label, key=f"btn_kat_flt_{t_ad}", use_container_width=True):
+            st.session_state["selected_kat_filter"] = t_ad
+            st.rerun()
+
+    secilen_tur = st.session_state["selected_kat_filter"]
+    if secilen_tur != "Tümü":
+        st.info(f"Şu an gösterilen tür: **{secilen_tur}**")
+
+    # --- SADELEŞTİRİLMİŞ ARAMA ÇUBUĞU ---
+    arama_metin = st.text_input("🔍 Kitap Adı veya Yazar Adı Yazın...", placeholder="Örn: Nutuk veya Mustafa Kemal")
+
+    # VERİ TABANINDAN SORGULAMA
     query = supabase.table("kitaplar").select("id, ad, yazar, kategori, durum, emanet_alan, okundu_durum")
-    if f_tur != "Tümü": query = query.eq("kategori", f_tur)
-    if f_yazar != "Tümü": query = query.eq("yazar", f_yazar)
-    if f_okundu != "Tümü": query = query.eq("okundu_durum", f_okundu)
+    if secilen_tur != "Tümü":
+        query = query.eq("kategori", secilen_tur)
 
     try:
         res_k = query.order("id", desc=True).execute()
@@ -257,16 +294,18 @@ with tab_liste:
         st.error(f"Kitaplar Listelenemedi: {err}")
         kitaplar = []
 
-    if arama_metin:
-        a_met = arama_metin.lower()
+    # Arama Metni Filtresi
+    if arama_metin.strip():
+        a_met = arama_metin.strip().lower()
         kitaplar = [k for k in kitaplar if a_met in str(k.get("ad", "")).lower() or a_met in str(k.get("yazar", "")).lower()]
 
     st.divider()
 
+    # KİTAP LİSTESİ EKRANA BASMA
     if kitaplar:
         for k in kitaplar:
             k_id, k_ad, k_yazar, k_kat, k_durum, k_emanet, k_okundu = k["id"], k["ad"], k["yazar"], k["kategori"], k["durum"], k["emanet_alan"], k["okundu_durum"]
-            with st.expander(f"📘 {k_ad}"):
+            with st.expander(f"📘 {k_ad} - {k_yazar}"):
                 col_detay, col_qr = st.columns([2, 1.2])
                 with col_detay:
                     st.write(f"**ID:** #{k_id}")
@@ -300,7 +339,7 @@ with tab_liste:
                     qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=250x250&data={encoded_qr_data}"
                     st.image(qr_url, caption=f"ID: #{k_id}", width=150)
     else:
-        st.info("Kriterlere uygun kitap bulunamadı.")
+        st.info("Arama veya filtre kriterlerine uygun kitap bulunamadı.")
 
 # --- 3. SEKME: EMANET İŞLEMLERİ ---
 with tab_emanet:
@@ -458,3 +497,64 @@ with tab_emanet:
 
             except Exception as err:
                 st.error(f"🚨 SUPABASE / VERİTABANI HATASI DETAYI:\n{str(err)}")
+
+# --- 4. SEKME: TÜR (KATEGORİ) AYARLARI ---
+with tab_turler:
+    st.subheader("⚙️ Kitap Türü (Kategori) Yönetimi")
+    
+    # 1. YENİ TÜR EKLEME
+    st.markdown("#### ➕ Yeni Tür Ekle")
+    col_yeni_tur, col_btn_tur = st.columns([3, 1])
+    yeni_tur_adi = col_yeni_tur.text_input("Tür Adı:", placeholder="Örn: Felsefe, Tarih, Roman", label_visibility="collapsed")
+    
+    if col_btn_tur.button("Tür Ekle", use_container_width=True):
+        if yeni_tur_adi.strip():
+            try:
+                # Mükerrer kontrolü
+                chk = supabase.table("kategoriler").select("ad").ilike("ad", yeni_tur_adi.strip()).execute()
+                if chk.data:
+                    st.warning(f"'{yeni_tur_adi.strip()}' türü zaten mevcut!")
+                else:
+                    supabase.table("kategoriler").insert({"ad": yeni_tur_adi.strip()}).execute()
+                    st.session_state["bildirim"] = ("success", f"✅ '{yeni_tur_adi.strip()}' türü başarıyla eklendi!")
+                    st.rerun()
+            except Exception as e:
+                st.error(f"Tür eklenirken hata oluştu: {e}")
+        else:
+            st.warning("Lütfen bir tür adı girin.")
+
+    st.markdown("---")
+    
+    # 2. MEVCUT TÜRLERİ LİSTELEME VE SİLME
+    st.markdown("#### 🗑️ Mevcut Türler")
+    try:
+        res_tur_list = supabase.table("kategoriler").select("*").order("ad").execute()
+        kat_data = res_tur_list.data if res_tur_list.data else []
+    except Exception:
+        kat_data = []
+
+    if kat_data:
+        for kat in kat_data:
+            k_id = kat["id"]
+            k_ad = kat["ad"]
+            
+            # Bu türe ait kaç kitap olduğunu öğrenelim
+            try:
+                c_res = supabase.table("kitaplar").select("id", count="exact").eq("kategori", k_ad).execute()
+                k_count = c_res.count if c_res.count is not None else 0
+            except Exception:
+                k_count = 0
+
+            col_t1, col_t2, col_t3 = st.columns([3, 2, 1])
+            col_t1.write(f"📁 **{k_ad}**")
+            col_t2.caption(f"({k_count} kayıtlı kitap)")
+            
+            if col_t3.button("Sil", key=f"btn_del_kat_{k_id}", use_container_width=True):
+                try:
+                    supabase.table("kategoriler").delete().eq("id", k_id).execute()
+                    st.session_state["bildirim"] = ("success", f"🗑️ '{k_ad}' türü silindi.")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Tür silinirken hata oluştu: {e}")
+    else:
+        st.info("Kayıtlı hiçbir tür bulunamadı.")
